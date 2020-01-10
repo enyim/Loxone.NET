@@ -16,6 +16,8 @@ namespace Loxone.Client
     using System.Net;
     using System.Threading;
     using System.Threading.Tasks;
+    using Loxone.Client.Controls;
+    using Loxone.Client.Transport;
 
     /// <summary>
     /// Encapsulates connection to the Loxone Miniserver.
@@ -250,6 +252,13 @@ namespace Loxone.Client
         {
             CheckBeforeOperation();
             var response = await _webSocket.RequestCommandAsync<string>("jdev/sps/enablebinstatusupdate", _defaultEncryption, cancellationToken).ConfigureAwait(false);
+        }
+
+        internal async Task<LXResponse<string>> Command(CancellationToken cancellation, Command command)
+        {
+            CheckBeforeOperation();
+            var response = await _webSocket.RequestCommandAsync<string>($"jdev/sps/io/{command}", _defaultEncryption, cancellation).ConfigureAwait(false);
+            return response;
         }
 
         private void CheckBeforeOpen()

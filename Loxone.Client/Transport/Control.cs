@@ -16,6 +16,7 @@ namespace Loxone.Client.Transport
 
     internal sealed class Control
     {
+
         [JsonPropertyName("uuidAction")]
         public Uuid Uuid { get; set; }
 
@@ -34,6 +35,8 @@ namespace Loxone.Client.Transport
 
         [JsonPropertyName("cat")]
         public Uuid? Category { get; set; }
+
+        public IDictionary<string, Uuid> States { get; set; }
 
         [JsonExtensionData]
         public IDictionary<string, JsonElement> ExtensionData { get; set; }

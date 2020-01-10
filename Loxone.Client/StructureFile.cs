@@ -20,6 +20,8 @@ namespace Loxone.Client
     {
         private Transport.StructureFile _innerFile;
 
+        internal Transport.StructureFile InnerFile => _innerFile;
+
         public DateTime LastModified
         {
             get
@@ -49,11 +51,6 @@ namespace Loxone.Client
         private CategoryCollection _categories;
 
         public CategoryCollection Categories => _categories ??= new CategoryCollection(_innerFile.Categories);
-
-
-        private ControlCollection _controls;
-
-        public ControlCollection Controls { get => _controls ??= new ControlCollection(_innerFile.Controls,Categories, Rooms); }
 
         private StructureFile(Transport.StructureFile innerFile)
         {

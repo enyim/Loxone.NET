@@ -46,7 +46,7 @@ namespace Loxone.Client.Transport
             Contract.Requires(_webSocket == null);
 
             _webSocket = new ClientWebSocket();
-            //_webSocket.Options.AddSubProtocol("remotecontrol"); // HACK - Probably should check scheme for http/https
+            _webSocket.Options.AddSubProtocol("remotecontrol"); // HACK - Probably should check scheme for http/https
             await _webSocket.ConnectAsync(new UriBuilder(BaseUri) { Path = "ws/rfc6455" }.Uri, cancellationToken).ConfigureAwait(false);
             StartReceiveLoop();
         }

@@ -12,36 +12,40 @@ namespace Loxone.Client
 {
     using System.Collections;
     using System.Collections.Generic;
-    using System.Diagnostics.Contracts;
+    using Loxone.Client.Controls;
 
-    public sealed class ControlCollection : IReadOnlyCollection<Control>
+    public sealed class ControlCollection : IReadOnlyList<Control>
     {
-        private readonly IDictionary<string, Transport.Control> _innerControls;
-        private CategoryCollection categories;
-        private RoomCollection rooms;
-        
+        private List<Control> _toplevelControls;
+        private Dictionary<Uuid, Control> _allControlsByUuid;
 
-        internal ControlCollection(IDictionary<string, Transport.Control> innerControls, CategoryCollection categories, RoomCollection rooms)
+        public Control this[int index] => _toplevelControls[index];
+
+        public Control this[Uuid uuid] => _allControlsByUuid[uuid];
+
+        public int Count => _toplevelControls.Count;
+
+        public IEnumerator<Control> GetEnumerator() => _toplevelControls.GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => this.GetEnumerator();
+
+        internal ControlCollection()
         {
-            Contract.Requires(innerControls != null);
-            this._innerControls = innerControls;
-            this.categories = categories;
-            this.rooms = rooms;
+            this._toplevelControls = new List<Control>();
+            this._allControlsByUuid = new Dictionary<Uuid, Control>();
         }
 
-        public int Count => _innerControls.Count;
-
-        public IEnumerator<Control> GetEnumerator()
+        internal void Clear(int? capacity)
         {
-            foreach (var pair in _innerControls)
-            {
-                yield return new Control(pair.Value, categories, rooms);
-            }
+            _toplevelControls.Clear();
+            _toplevelControls.Capacity = capacity.GetValueOrDefault();
+            _allControlsByUuid.Clear();
         }
 
-        IEnumerator IEnumerable.GetEnumerator()
+        internal void Add(Control control,MiniserverContext context=null)
         {
-            return this.GetEnumerator();
+            _toplevelControls.Add(control);
+            _allControlsByUuid.Add(control.Uuid, control);
         }
     }
 }
