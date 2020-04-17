@@ -32,17 +32,7 @@ namespace Loxone.Client.Transport
 
         private readonly IEventListener _eventListener;
 
-        protected internal override LXClient HttpClient
-        {
-            get
-            {
-                if (_httpClient == null)
-                {
-                    _httpClient = new LXHttpClient(HttpUtils.MakeHttpUri(BaseUri));
-                }
-                return _httpClient;
-            }
-        }
+        protected internal override LXClient HttpClient => _httpClient??= new LXHttpClient(HttpUtils.MakeHttpUri(BaseUri));
 
         public LXWebSocket(Uri baseUri, IEncryptorProvider encryptorProvider, IEventListener eventListener) : base(baseUri)
         {
@@ -56,8 +46,8 @@ namespace Loxone.Client.Transport
             Contract.Requires(_webSocket == null);
 
             _webSocket = new ClientWebSocket();
+            //_webSocket.Options.AddSubProtocol("remotecontrol"); // HACK - Probably should check scheme for http/https
             await _webSocket.ConnectAsync(new UriBuilder(BaseUri) { Path = "ws/rfc6455" }.Uri, cancellationToken).ConfigureAwait(false);
-
             StartReceiveLoop();
         }
 
@@ -81,6 +71,7 @@ namespace Loxone.Client.Transport
             {
                 try
                 {
+                    if (_receiveLoopCancellation.IsCancellationRequested) break;
                     var header = await ReceiveHeaderAsync(_receiveLoopCancellation.Token).ConfigureAwait(false);
                     Contract.Assert(!header.IsLengthEstimated);
                     await DispatchMessageAsync(header, _receiveLoopCancellation.Token).ConfigureAwait(false);
@@ -242,7 +233,7 @@ namespace Loxone.Client.Transport
             int received = 0;
             bool eom = false;
 
-            while (received < segment.Count)
+            while (received < segment.Count && !cancellationToken.IsCancellationRequested)
             {
                 var slice = new ArraySegment<byte>(segment.Array, segment.Offset + received, segment.Count - received);
                 var result = await _webSocket.ReceiveAsync(slice, cancellationToken).ConfigureAwait(false);
@@ -253,7 +244,7 @@ namespace Loxone.Client.Transport
                 {
                     break;
                 }
-
+                 
                 eom = result.EndOfMessage;
             }
 

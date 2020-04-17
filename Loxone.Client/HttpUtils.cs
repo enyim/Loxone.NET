@@ -20,6 +20,8 @@ namespace Loxone.Client
 
         public const string HttpScheme = "http";
 
+        public const string HttpsScheme = "https";
+
         public const string WebSocketScheme = "ws";
 
         public const string JsonMediaType = "application/json";
@@ -30,7 +32,7 @@ namespace Loxone.Client
         {
             Contract.Requires(uri != null);
 
-            return string.Equals(HttpScheme, uri.Scheme, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(HttpScheme, uri.Scheme, StringComparison.OrdinalIgnoreCase) || string.Equals(HttpsScheme, uri.Scheme, StringComparison.OrdinalIgnoreCase);
         }
 
         public static bool IsWebSocketUri(Uri uri)
@@ -54,7 +56,10 @@ namespace Loxone.Client
 
         public static Uri MakeWebSocketUri(Uri uri) => ChangeScheme(uri, WebSocketScheme);
 
-        public static Uri MakeHttpUri(Uri uri) => ChangeScheme(uri, HttpScheme);
+        public static Uri MakeHttpUri(Uri uri) {
+            if(HttpUtils.IsHttpUri(uri)) return uri;
+            return ChangeScheme(uri, HttpScheme); // Todo default HTTP
+        }
 
         public static bool IsJsonMediaType(MediaTypeHeaderValue mediaType)
         {

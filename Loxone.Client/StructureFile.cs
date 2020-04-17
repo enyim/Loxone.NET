@@ -43,33 +43,17 @@ namespace Loxone.Client
 
         private RoomCollection _rooms;
 
-        public RoomCollection Rooms
-        {
-            get
-            {
-                if (_rooms == null)
-                {
-                    _rooms = new RoomCollection(_innerFile.Rooms);
-                }
+        public RoomCollection Rooms => _rooms??= new RoomCollection(_innerFile.Rooms);
 
-                return _rooms;
-            }
-        }
 
         private CategoryCollection _categories;
 
-        public CategoryCollection Categories
-        {
-            get
-            {
-                if (_categories == null)
-                {
-                    _categories = new CategoryCollection(_innerFile.Categories);
-                }
+        public CategoryCollection Categories => _categories ??= new CategoryCollection(_innerFile.Categories);
 
-                return _categories;
-            }
-        }
+
+        private ControlCollection _controls;
+
+        public ControlCollection Controls { get => _controls ??= new ControlCollection(_innerFile.Controls,Categories, Rooms); }
 
         private StructureFile(Transport.StructureFile innerFile)
         {

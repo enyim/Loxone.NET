@@ -1,17 +1,17 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <PackageId>Graspea.Loxone</PackageId>
     <AssemblyName>Graspea.Loxone</AssemblyName>
     <Description>Allows connecting to Loxone Miniserver from .NET application.</Description>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <NeutralLanguage>en</NeutralLanguage>
     <Product>Graspea.Loxone</Product>
-    <Authors>manison</Authors>
+    <Authors>Graspea, Manison</Authors>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="System.Linq" Version="4.3.0" />
     <PackageReference Include="System.Text.Json" Version="4.7.0" />
-    <PackageReference Include="DerConverter" Version="3.0.0.82" />
   </ItemGroup>
   <ItemGroup>
     <Compile Update="Strings.Designer.cs">

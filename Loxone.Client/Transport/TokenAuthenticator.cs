@@ -50,7 +50,7 @@ namespace Loxone.Client.Transport
         private string BuildAcquireTokenCommand(string hash)
         {
             int permission;
-            Uuid uuid;
+            Uuid uuid = default;
             string info;
             var tokenCredentials = Credentials as TokenCredential;
             if (tokenCredentials != null)
@@ -63,7 +63,7 @@ namespace Loxone.Client.Transport
                 permission = (int)TokenPermission.Web;
             }
 
-            if (uuid == default)
+            if (uuid==default)
             {
                 uuid = MachineNameUuid.Value;
             }

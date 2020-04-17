@@ -32,6 +32,13 @@ namespace Loxone.Client.Transport
         {
             if (_httpClient == null)
             {
+                // TODO maybe custom support for SSL - dns proxy for loxone
+                // HttpClientHandler is an HttpMessageHandler with a common set of properties
+                //var handler = new HttpClientHandler();
+                //handler.ServerCertificateCustomValidationCallback = (msg, crt, chain, policy) =>
+                //    {
+                //        return true;
+                //    };
                 var httpClient = new HttpClient();
                 httpClient.BaseAddress = BaseUri;
                 httpClient.DefaultRequestHeaders.Accept.Clear();
@@ -48,19 +55,16 @@ namespace Loxone.Client.Transport
         protected override async Task<LXResponse<T>> RequestCommandInternalAsync<T>(string command, CommandEncryption encryption, CancellationToken cancellationToken)
         {
             EnsureHttpClient();
-
-            using (var response = await _httpClient.GetAsync(command, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+            using var response = await _httpClient.GetAsync(command, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode && HttpUtils.IsJsonMediaType(response.Content.Headers.ContentType))
             {
-                if (response.IsSuccessStatusCode && HttpUtils.IsJsonMediaType(response.Content.Headers.ContentType))
-                {
-                    string contentStr = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    var lxResponse = Transport.LXResponse<T>.Deserialize(contentStr);
-                    return lxResponse;
-                }
-                else
-                {
-                    throw new MiniserverTransportException();
-                }
+                string contentStr = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var lxResponse = Transport.LXResponse<T>.Deserialize(contentStr);
+                return lxResponse;
+            }
+            else
+            {
+                throw new MiniserverTransportException();
             }
         }
 
