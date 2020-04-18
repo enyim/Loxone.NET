@@ -23,18 +23,17 @@ namespace Loxone.Client.Transport
         private ClientWebSocket _webSocket; // TODO maybe reusable static
         private CancellationTokenSource _receiveLoopCancellation;
         private ICommandHandler _pendingCommand;
-        private LXHttpClient _httpClient;
+        private LXHttpClient _httpClient; //another http client
         private readonly IEncryptorProvider _encryptorProvider;
         private readonly IConnection _connection;
 
         protected internal override LXClient HttpClient => _httpClient;
 
-        public LXWebSocket(Uri baseUri, IEncryptorProvider encryptorProvider, IConnection connection,CancellationToken ct) : base(HttpUtils.MakeWebSocketUri(baseUri), ct)
+        public LXWebSocket(LXUri baseUri, IEncryptorProvider encryptorProvider, IConnection connection,CancellationToken ct) : base(HttpUtils.MakeWebSocketUri(baseUri), ct)
         {
-            
             this._encryptorProvider = encryptorProvider;
             this._connection = connection;
-            this._httpClient = new LXHttpClient(baseUri, ct);
+            this._httpClient = new LXHttpClient(HttpUtils.MakeHttpUri(baseUri), ct);
         }
 
         public async Task CloseAsync()

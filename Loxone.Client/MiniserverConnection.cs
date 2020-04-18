@@ -54,17 +54,17 @@ namespace Loxone.Client
         /// Constructor
         /// </summary>
         /// <param name="address"></param>
-        public MiniserverConnection(Uri address, ILogger logger)
+        public MiniserverConnection(LXUri address, ILogger logger)
         {
             MiniserverInfo = new MiniserverLimitedInfo();
             _state = (int)State.Constructed;
-            Address = HttpUtils.MakeHttpUri(address);
+            Address = address;
             Logger = logger;
         }
         Task IConnection.ReceiveTask { get => closedTask; set =>closedTask=value; }
         public Task IsClosedAsync() => closedTask;
         public bool IsDisposed => _state >= (int)State.Disposing;
-        public Uri Address { get; private set; }
+        public LXUri Address { get; private set; }
         public CancellationTokenSource CtsConnection { get; private set; }
         public MiniserverLimitedInfo MiniserverInfo { get; }
         public event EventHandler<IReadOnlyList<TextState>> TextStateChanged;
@@ -121,7 +121,7 @@ namespace Loxone.Client
             CtsConnection = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             try
             {
-                WebSocket = new LXWebSocket(HttpUtils.MakeWebSocketUri(Address), this, this, CtsConnection.Token);
+                WebSocket = new LXWebSocket(Address, this, this, CtsConnection.Token);
                 Session = new Session(WebSocket);
                 await CheckMiniserverReachableAsync(CtsConnection.Token).ConfigureAwait(false);
                 await OpenWebSocketAsync(CtsConnection.Token).ConfigureAwait(false);
@@ -129,10 +129,11 @@ namespace Loxone.Client
                 await _authenticator.AuthenticateAsync(CtsConnection.Token).ConfigureAwait(false);
                 ChangeState(State.Open);
             }
-            catch
+            catch(Exception ex)
             {
                 ChangeState(State.Constructed);
-                throw;
+                Logger.LogWarning(ex,"Connecting WS");
+                throw ex;
             }
         }
 
@@ -193,7 +194,6 @@ namespace Loxone.Client
         private void CheckBeforeOpen()
         {
             CheckDisposed();
-            if (Address == null) throw new InvalidOperationException(string.Format(CultureInfo.CurrentCulture, Strings.MiniserverConnection_MustBeSetBeforeOpenFmt, nameof(Address)));
             if (Credentials == null)
             {
                 // Here we only check whether ICredentials is null. If ICredentials.GetCredential
@@ -230,7 +230,7 @@ namespace Loxone.Client
 
         private Authenticator CreateAuthenticator()
         {
-            var credentials = Credentials.GetCredential(Address, HttpUtils.BasicAuthenticationScheme);
+            var credentials = Credentials.GetCredential(HttpUtils.MakeHttpUri(Address), HttpUtils.BasicAuthenticationScheme);
             if (credentials == null) throw new InvalidOperationException();
             return CreateAuthenticator(credentials);
         }

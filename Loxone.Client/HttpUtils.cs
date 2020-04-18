@@ -13,6 +13,7 @@ namespace Loxone.Client
     using System;
     using System.Diagnostics.Contracts;
     using System.Net.Http.Headers;
+    using Loxone.Client.Transport;
 
     internal static class HttpUtils
     {
@@ -43,16 +44,17 @@ namespace Loxone.Client
         private static Uri ChangeScheme(Uri uri, string scheme)
         {
             Contract.Requires(uri != null);
-            if (!String.Equals(uri.Scheme, scheme, StringComparison.OrdinalIgnoreCase)) uri = new UriBuilder(uri) { Scheme = scheme }.Uri;
+            if (!String.Equals(uri.Scheme, scheme, StringComparison.OrdinalIgnoreCase)) uri = new UriBuilder(uri) {
+                Scheme = scheme,
+                Port = uri.Port,
+                Host = uri.Host,
+            }.Uri;
             return uri;
         }
 
-        public static Uri MakeWebSocketUri(Uri uri) => ChangeScheme(uri, WebSocketScheme);
+        public static Uri MakeWebSocketUri(LXUri uri) => new Uri($"ws://{uri.UriBase}:{uri.PortWs}/");
 
-        public static Uri MakeHttpUri(Uri uri) {
-            if(HttpUtils.IsHttpUri(uri)) return uri;
-            return ChangeScheme(uri, HttpScheme);
-        }
+        public static Uri MakeHttpUri(LXUri uri) => new Uri($"{uri.Scheme}://{uri.UriBase}:{uri.PortHttp}/");
 
         public static bool IsJsonMediaType(MediaTypeHeaderValue mediaType)
         {

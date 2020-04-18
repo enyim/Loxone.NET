@@ -13,10 +13,10 @@ namespace Loxone.Client.Samples.Console
     using System;
     using System.IO;
     using System.Linq;
-    using System.Net.WebSockets;
     using System.Threading;
     using System.Threading.Tasks;
     using Loxone.Client.Controls;
+    using Loxone.Client.Transport;
     using Microsoft.Extensions.Logging;
 
     internal class Program
@@ -27,11 +27,10 @@ namespace Loxone.Client.Samples.Console
         {
             var password = "web";
             var login = "web";
-            var address = "http://testminiserver.loxone.com:7779/";
 
             var logger = loggerFactory.CreateLogger<MiniserverContext>();
 
-            var connection = new MiniserverConnection(new Uri(address),logger);
+            var connection = new MiniserverConnection(new LXUri("http", "testminiserver.loxone.com", 7779,7779),logger);
             MiniserverContext miniserverContext = null;
             connection.Credentials = new TokenCredential(login, password, TokenPermission.Web, default, "Loxone.NET Sample Console");
             try

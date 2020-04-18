@@ -11,7 +11,6 @@
 namespace Loxone.Client.Transport
 {
     using System;
-    using System.Diagnostics.Contracts;
     using System.Net.Http;
     using System.Net.Http.Headers;
     using System.Threading;
@@ -25,7 +24,6 @@ namespace Loxone.Client.Transport
 
         public LXHttpClient(Uri baseUri,CancellationToken ct) : base(baseUri,ct)
         {
-            Contract.Requires(HttpUtils.IsHttpUri(baseUri));
         }
 
         private void EnsureHttpClient()
