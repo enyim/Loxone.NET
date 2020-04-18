@@ -35,7 +35,7 @@ namespace Loxone.Client.Tests
         [TestMethod]
         public void CreateControls()
         {
-            using (var context = new MiniserverContext(_structureFile, LoggerFactory.Create(b => b.AddFilter("Microsoft", LogLevel.Warning))))
+            using (var context = new MiniserverContext(_structureFile, LoggerFactory.Create(b => b.AddFilter("Microsoft", LogLevel.Warning)).CreateLogger("test")))
             {
             }
         }

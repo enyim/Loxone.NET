@@ -1,4 +1,4 @@
-﻿// ----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // <copyright file="LocalizationInfo.cs">
 //     Copyright (c) The Loxone.NET Authors.  All rights reserved.
 // </copyright>
@@ -19,18 +19,7 @@ namespace Loxone.Client
 
         private CultureInfo _culture;
 
-        public CultureInfo Culture
-        {
-            get
-            {
-                if (_culture == null)
-                {
-                    _culture = CultureHelper.GetCultureByThreeLetterWindowsLanguageName(_msInfo.LanguageCode);
-                }
-
-                return _culture;
-            }
-        }
+        public CultureInfo Culture {get=> _culture ??= _culture = CultureHelper.GetCultureByThreeLetterWindowsLanguageName(_msInfo.LanguageCode);}
 
         public string CurrencySymbol => _msInfo.Currency;
 

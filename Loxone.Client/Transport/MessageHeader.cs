@@ -1,4 +1,4 @@
-﻿// ----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // <copyright file="MessageHeader.cs">
 //     Copyright (c) The Loxone.NET Authors.  All rights reserved.
 // </copyright>
@@ -15,13 +15,9 @@ namespace Loxone.Client.Transport
 
     internal struct MessageHeader
     {
-        private readonly MessageIdentifier _identifier;
+        public MessageIdentifier Identifier { get; }
 
-        public MessageIdentifier Identifier => _identifier;
-
-        private readonly int _length;
-
-        public int Length => _length;
+        public int Length { get; }
 
         private readonly MessageInfoFlags _flags;
 
@@ -35,9 +31,9 @@ namespace Loxone.Client.Transport
                 throw new MiniserverTransportException(Strings.MiniserverTransportException_Message);
             }
 
-            _identifier = (MessageIdentifier)h[1];
+            Identifier = (MessageIdentifier)h[1];
             _flags = (MessageInfoFlags)h[2];
-            _length = BitConverter.ToInt32(header.Array, header.Offset + 4);
+            Length = BitConverter.ToInt32(header.Array, header.Offset + 4);
         }
     }
 }

@@ -19,16 +19,6 @@ namespace Loxone.Client.Transport
     /// </summary>
     internal static class HexConverter
     {
-        private static char GetHexValue(int i)
-        {
-            if (i < 10)
-            {
-                return (char)(i + '0');
-            }
-
-            return (char)(i - 10 + 'A');
-        }
-
         public static void FromByteArray(char[] dest, int offset, byte[] source)
         {
             Contract.Requires(source != null);
@@ -80,15 +70,8 @@ namespace Loxone.Client.Transport
             for (int i = 0; i < s.Length; i++)
             {
                 int value = s[i];
-
-                if (value >= 0x30 && value <= 0x39)
-                {
-                    value -= 0x30;
-                }
-                else if (value >= 0x41 && value <= 0x46)
-                {
-                    value -= 0x37;
-                }
+                if (value >= 0x30 && value <= 0x39) value -= 0x30;
+                else if (value >= 0x41 && value <= 0x46) value -= 0x37;
                 else if (allowedSeparators != null && allowedSeparators.Contains(s[i]))
                 {
                     if (validCount == 2)
@@ -96,29 +79,25 @@ namespace Loxone.Client.Transport
                         validCount = 0;
                         continue;
                     }
-                    else
-                    {
-                        throw new FormatException(Strings.HexConverter_BadFormat);
-                    }
+                    else throw new FormatException(Strings.HexConverter_BadFormat);
                 }
-                else
-                {
-                    throw new FormatException(Strings.HexConverter_BadFormat);
-                }
+                else throw new FormatException(Strings.HexConverter_BadFormat);
 
-                if (validCount % 2 == 0)
-                {
-                    bytes[j] = (byte)(value << 4);
-                }
-                else
-                {
-                    bytes[j++] |= (byte)value;
-                }
-
+                if (validCount % 2 == 0) bytes[j] = (byte)(value << 4);
+                else bytes[j++] |= (byte)value;
                 validCount++;
             }
-
             return bytes;
+        }
+
+        private static char GetHexValue(int i)
+        {
+            if (i < 10)
+            {
+                return (char)(i + '0');
+            }
+
+            return (char)(i - 10 + 'A');
         }
     }
 }

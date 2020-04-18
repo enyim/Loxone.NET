@@ -17,199 +17,135 @@ namespace Loxone.Client
 
     public class MiniserverContext : IDisposable
     {
-        public ILogger Logger;
+        private Dictionary<Uuid, Control> _stateToControl = new Dictionary<Uuid, Control>();
+        private MiniserverConnection connection;
+        private StructureFile structureFile;
 
-        private bool _disposed;
+        public MiniserverContext(StructureFile structureFile, ILogger logger, MiniserverConnection connection=null, bool ownsConnection=true)
+        {
+            Logger = logger;
+            SetStructureFile(structureFile, nameof(structureFile), throwOnNull: true);
+            if(connection != null) SetConnection(connection, ownsConnection, nameof(connection));
+        }
 
-        private bool _ownsConnection;
 
-        private MiniserverConnection _connection;
+        public ILogger Logger { get; private set; }
 
+        public bool Disposed { get; set; }
+        public bool OwnsConnection { get; private set; }
+        public ControlCollection Controls { get; } = new ControlCollection();
         public MiniserverConnection Connection
         {
             get
             {
                 CheckDisposed();
-                return _connection;
+                return connection;
             }
 
-            set => SetConnection(value, ownsConnection: false, nameof(value), throwOnNull: false);
+            set => SetConnection(value, ownsConnection: false, nameof(value));
         }
-
-        private StructureFile _structureFile;
-
         public StructureFile StructureFile
         {
             get
             {
                 CheckDisposed();
-                return _structureFile;
+                return structureFile;
             }
 
             set => SetStructureFile(value, nameof(value), throwOnNull: false);
         }
 
-        private ControlCollection _controls = new ControlCollection();
 
-        public ControlCollection Controls => _controls;
 
-        private Dictionary<Uuid, Control> _stateToControl = new Dictionary<Uuid, Control>();
-
-        public MiniserverContext()
+        private void SetConnection(MiniserverConnection connection, bool ownsConnection, string parameterName)
         {
-        }
+            if (connection.IsDisposed) throw new ArgumentException(Strings.MiniserverContext_ConnectionDisposed, parameterName);
 
-        public MiniserverContext(StructureFile structureFile, ILoggerFactory lf)
-        {
-            SetLogger(lf);
-            SetStructureFile(structureFile, nameof(structureFile), throwOnNull: true);
-        }
-
-        public MiniserverContext(MiniserverConnection connection, ILoggerFactory lf) : this(connection, true, lf)
-        {
-        }
-
-        public MiniserverContext(MiniserverConnection connection, bool ownsConnection, ILoggerFactory lf)
-        {
-            SetLogger(lf);
-            SetConnection(connection, ownsConnection, nameof(connection), throwOnNull: true);
-        }
-
-        public MiniserverContext(StructureFile structureFile, MiniserverConnection connection, ILoggerFactory lf) : this(structureFile, connection, true, lf)
-        {
-        }
-
-        public MiniserverContext(StructureFile structureFile, MiniserverConnection connection, bool ownsConnection, ILoggerFactory lf)
-        {
-            SetLogger(lf);
-            SetStructureFile(structureFile, nameof(structureFile), throwOnNull: true);
-            SetConnection(connection, ownsConnection, nameof(connection), throwOnNull: true);
-            
-        }
-
-        private void SetLogger(ILoggerFactory lf)
-        {
-            lf.CreateLogger<MiniserverContext>();
-        }
-
-        private void SetConnection(MiniserverConnection connection, bool ownsConnection, string parameterName, bool throwOnNull)
-        {
-            if (connection == null && throwOnNull)
-            {
-                throw new ArgumentNullException(parameterName);
-            }
-
-            if (connection.IsDisposed)
-            {
-                throw new ArgumentException(Strings.MiniserverContext_ConnectionDisposed, parameterName);
-            }
-
-            DisposeConnection();
-
-            _connection = connection;
-            _ownsConnection = ownsConnection;
-
+            DisposeConnection(); //previous connection
+            this.connection = connection;
+            OwnsConnection = ownsConnection;
             WireEventHandlers();
         }
 
         private void SetStructureFile(StructureFile structureFile, string parameterName, bool throwOnNull)
         {
-            if (structureFile == null && throwOnNull)
-            {
-                throw new ArgumentNullException(parameterName);
-            }
-
-            _structureFile = structureFile;
+            if (structureFile == null && throwOnNull) throw new ArgumentNullException(parameterName);
+            this.structureFile = structureFile;
             RebuildControls();
         }
 
         private void WireEventHandlers()
         {
-            if (_connection != null)
+            if (Connection != null)
             {
-                _connection.ValueStateChanged += Connection_ValueStateChanged;
-                _connection.TextStateChanged += Connection_TextStateChanged;
+                Connection.ValueStateChanged += Connection_ValueStateChanged;
+                Connection.TextStateChanged += Connection_TextStateChanged;
             }
         }
 
         private void UnwireEventHandlers()
         {
-            if (_connection != null)
+            if (Connection != null)
             {
-                _connection.ValueStateChanged -= Connection_ValueStateChanged;
-                _connection.TextStateChanged -= Connection_TextStateChanged;
+                Connection.ValueStateChanged -= Connection_ValueStateChanged;
+                Connection.TextStateChanged -= Connection_TextStateChanged;
             }
         }
 
-        private void Connection_ValueStateChanged(object sender, ValueStateEventArgs e)
+        private void Connection_ValueStateChanged(object sender, IReadOnlyList<ValueState> e)
         {
-            foreach (var state in e.ValueStates)
-            {
-                if (_stateToControl.TryGetValue(state.Control, out var control))
-                {
-                    control.OnValueStateUpdate(state);
-                }
-            }
+            foreach (var state in e) if (_stateToControl.TryGetValue(state.Control, out var control)) control.OnValueStateUpdate(state);
         }
 
-        private void Connection_TextStateChanged(object sender, TextStateEventArgs e)
+        private void Connection_TextStateChanged(object sender, IReadOnlyList<TextState> e)
         {
         }
 
         private void RebuildControls()
         {
-            _controls.Clear(_structureFile?.InnerFile?.Controls?.Count);
+            Controls.Clear(StructureFile?.InnerFile?.Controls?.Count);
             _stateToControl.Clear();
-            if (_structureFile != null)
+            if (StructureFile != null)
             {
-                foreach (var controlPair in _structureFile.InnerFile.Controls)
+                foreach (var controlPair in StructureFile.InnerFile.Controls)
                 {
                     var innerControl = controlPair.Value;
                     var control = Control.CreateControl(innerControl);
-                    control.Room = _structureFile.Rooms[innerControl.Room.Value];
-                    control.Category = _structureFile.Categories[innerControl.Category.Value];
+                    control.Room = StructureFile.Rooms[innerControl.Room.Value];
+                    control.Category = StructureFile.Categories[innerControl.Category.Value];
                     control.Context = this;
-                    _controls.Add(control,this);
+                    Controls.Add(control);
                     if (innerControl.States != null)
                     {
-                        foreach (var statePair in innerControl.States)
-                        {
-                            _stateToControl.Add(statePair.Value, control);
-                        }
+                        foreach (var statePair in innerControl.States) _stateToControl.Add(statePair.Value, control);
                     }
                 }
             }
         }
 
+        private void CheckDisposed()
+        {
+            if (Disposed) throw new ObjectDisposedException(this.GetType().FullName);
+        }
+
         private void DisposeConnection()
         {
             UnwireEventHandlers();
-            if (_connection != null && _ownsConnection)
+            if (Connection != null && OwnsConnection)
             {
-                _connection.Dispose();
-                _ownsConnection = false;
-            }
-        }
-
-        private void CheckDisposed()
-        {
-            if (_disposed)
-            {
-                throw new ObjectDisposedException(this.GetType().FullName);
+                Logger.LogDebug("Connection's events will be desposed");
+                Connection.Dispose();
+                OwnsConnection = false;
             }
         }
 
         protected virtual void Dispose(bool disposing)
         {
-            if (_disposed)
-            {
-                return;
-            }
-
+            if (Disposed) return;
             if (disposing)
             {
                 DisposeConnection();
-                _disposed = true;
+                Disposed = true;
             }
         }
 

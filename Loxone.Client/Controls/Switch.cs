@@ -8,8 +8,6 @@
 // </license>
 // ----------------------------------------------------------------------
 
-using System.Threading.Tasks;
-
 namespace Loxone.Client.Controls
 {
     public class Switch : Control
@@ -28,10 +26,7 @@ namespace Loxone.Client.Controls
 
         protected override void UpdateValueState(ValueState state)
         {
-            if (GetStateNameByUuid(state.Control) == "active")
-            {
-                _activeState = state.Value != 0;
-            }
+            if (GetStateNameByUuid(state.Control) == "active") _activeState = state.Value != 0;
         }
     }
 }

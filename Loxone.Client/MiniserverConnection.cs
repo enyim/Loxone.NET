@@ -11,18 +11,21 @@
 namespace Loxone.Client
 {
     using System;
+    using System.Collections.Generic;
     using System.Diagnostics.Contracts;
     using System.Globalization;
     using System.Net;
+    using System.Net.WebSockets;
     using System.Threading;
     using System.Threading.Tasks;
     using Loxone.Client.Controls;
     using Loxone.Client.Transport;
+    using Microsoft.Extensions.Logging;
 
     /// <summary>
     /// Encapsulates connection to the Loxone Miniserver.
     /// </summary>
-    public class MiniserverConnection : IDisposable, Transport.IEncryptorProvider, Transport.IEventListener
+    public class MiniserverConnection : IDisposable, IEncryptorProvider, IConnection
     {
         private enum State
         {
@@ -32,45 +35,41 @@ namespace Loxone.Client
             Disposing,
             Disposed
         }
-
         private volatile int _state;
-
-        public bool IsDisposed => _state >= (int)State.Disposing;
-
-        private MiniserverLimitedInfo _miniserverInfo;
-
-        public MiniserverLimitedInfo MiniserverInfo => _miniserverInfo;
-
-        private Uri _baseUri;
-
-        public Uri Address
-        {
-            get => _baseUri;
-            set
-            {
-                Contract.Requires(value == null || HttpUtils.IsHttpUri(value));
-                Contract.Requires(value == null || String.IsNullOrEmpty(value.PathAndQuery));
-
-                CheckDisposed();
-                CheckState(State.Constructed);
-
-                if (value != null)
-                {
-                    InitWithUri(value);
-                }
-                else
-                {
-                    _baseUri = null;
-                }
-            }
-        }
-
-        private Transport.LXWebSocket _webSocket;
-
-        private Transport.Session _session;
-
+        private Timer _keepAliveTimer;
+        private Encryptor _requestOnlyEncryptor;
+        private MiniserverAuthenticationMethod _authenticationMethod;
         private ICredentials _credentials;
+        private Encryptor _requestAndResponseEncryptor;
+        private static readonly Version _tokenAuthenticationThresholdVersion = new Version(9, 0);
+        private Authenticator _authenticator;
+        private CommandEncryption _defaultEncryption = CommandEncryption.None;
+        private Task closedTask;
+        // According to the documentation the Miniserver will close the connection if the
+        // client doesn't send anything for more than 5 minutes.
+        private static readonly TimeSpan _defaultKeepAliveTimeout = TimeSpan.FromMinutes(3);
+        private TimeSpan _keepAliveTimeout = DefaultKeepAliveTimeout;
 
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="address"></param>
+        public MiniserverConnection(Uri address, ILogger logger)
+        {
+            MiniserverInfo = new MiniserverLimitedInfo();
+            _state = (int)State.Constructed;
+            Address = HttpUtils.MakeHttpUri(address);
+            Logger = logger;
+        }
+        Task IConnection.ReceiveTask { get => closedTask; set =>closedTask=value; }
+        public Task IsClosedAsync() => closedTask;
+        public bool IsDisposed => _state >= (int)State.Disposing;
+        public Uri Address { get; private set; }
+        public CancellationTokenSource CtsConnection { get; private set; }
+        public MiniserverLimitedInfo MiniserverInfo { get; }
+        public event EventHandler<IReadOnlyList<TextState>> TextStateChanged;
+        public event EventHandler<IReadOnlyList<ValueState>> ValueStateChanged;
+        public Exception AnyException { get; private set; }
         public ICredentials Credentials
         {
             get => _credentials;
@@ -78,13 +77,10 @@ namespace Loxone.Client
             {
                 CheckDisposed();
                 CheckState(State.Constructed);
-
                 _credentials = value;
             }
         }
-
-        private MiniserverAuthenticationMethod _authenticationMethod;
-
+        public static TimeSpan DefaultKeepAliveTimeout => _defaultKeepAliveTimeout;
         public MiniserverAuthenticationMethod AuthenticationMethod
         {
             get => _authenticationMethod;
@@ -96,129 +92,41 @@ namespace Loxone.Client
                 _authenticationMethod = value;
             }
         }
-
-        private static readonly Version _tokenAuthenticationThresholdVersion = new Version(9, 0);
-
-        private Transport.Authenticator _authenticator;
-
-        private CommandEncryption _defaultEncryption = CommandEncryption.None;
-
-        // According to the documentation the Miniserver will close the connection if the
-        // client doesn't send anything for more than 5 minutes.
-        private static readonly TimeSpan _defaultKeepAliveTimeout = TimeSpan.FromMinutes(3);
-
-        private TimeSpan _keepAliveTimeout = _defaultKeepAliveTimeout;
-
         public TimeSpan KeepAliveTimeout
         {
-            get
-            {
-                return _keepAliveTimeout;
-            }
+            get => _keepAliveTimeout;
             set
             {
                 Contract.Requires(value > TimeSpan.Zero);
-
                 CheckDisposed();
-
                 _keepAliveTimeout = value;
             }
         }
 
-        private Timer _keepAliveTimer;
+        internal ILogger Logger { get; set; }
+        internal LXWebSocket WebSocket { get; set; }
+        internal Session Session { get; set; }
+        internal MiniserverContext MiniserverContext { get; set; }
 
-        private Transport.Encryptor _requestOnlyEncryptor;
-        private Transport.Encryptor _requestAndResponseEncryptor;
-
-        public event EventHandler<ValueStateEventArgs> ValueStateChanged;
-
-        protected void OnValueStateChanged(ValueStateEventArgs e)
-        {
-            Contract.Requires(e != null);
-            ValueStateChanged?.Invoke(this, e);
-        }
-
-        public event EventHandler<TextStateEventArgs> TextStateChanged;
-
-        protected void OnValueStateChanged(TextStateEventArgs e)
-        {
-            Contract.Requires(e != null);
-            TextStateChanged?.Invoke(this, e);
-        }
-
-        public MiniserverConnection()
-        {
-            _miniserverInfo = new MiniserverLimitedInfo();
-            _state = (int)State.Constructed;
-        }
-
-        public MiniserverConnection(Uri address)
-            : this()
-        {
-            Contract.Requires(address != null);
-            Contract.Requires(HttpUtils.IsHttpUri(address));
-            Contract.Requires(String.IsNullOrEmpty(address.PathAndQuery));
-
-            InitWithUri(address);
-        }
-
-        public MiniserverConnection(IPEndPoint endpoint)
-            : this()
-        {
-            Contract.Requires(endpoint != null);
-
-            InitWithEndpoint(endpoint);
-        }
-
-        public MiniserverConnection(IPAddress address, int port)
-            : this()
-        {
-            Contract.Requires(address != null);
-            Contract.Requires(port >= IPEndPoint.MinPort && port <= IPEndPoint.MaxPort);
-
-            InitWithEndpoint(new IPEndPoint(address, port));
-        }
-
-        public MiniserverConnection(IPAddress address)
-            : this(address, HttpUtils.DefaultHttpPort)
-        {
-        }
-
-        private void InitWithEndpoint(IPEndPoint endpoint)
-        {
-            var builder = new UriBuilder(HttpUtils.HttpScheme, endpoint.Address.ToString());
-            if (endpoint.Port != HttpUtils.DefaultHttpPort)
-            {
-                builder.Port = endpoint.Port;
-            }
-
-            InitWithUri(builder.Uri);
-        }
-
-        private void InitWithUri(Uri address)
-        {
-            Contract.Requires(address != null);
-            Contract.Requires(HttpUtils.IsHttpUri(address));
-            Contract.Requires(String.IsNullOrEmpty(address.PathAndQuery));
-
-            _baseUri = address;
-        }
+        void IEventListener.OnValueStateChanged(IReadOnlyList<ValueState> values) => ValueStateChanged?.Invoke(this, values);
+        void IEventListener.OnTextStateChanged(IReadOnlyList<TextState> values) => TextStateChanged?.Invoke(this, values);
 
         public async Task OpenAsync(CancellationToken cancellationToken)
         {
             CheckDisposed();
             CheckBeforeOpen();
-
             ChangeState(State.Opening, State.Constructed);
 
+            // new cts for connection
+            CtsConnection = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             try
             {
-                _webSocket = new Transport.LXWebSocket(HttpUtils.MakeWebSocketUri(_baseUri), this, this);
-                _session = new Transport.Session(_webSocket);
-                await CheckMiniserverReachableAsync(cancellationToken).ConfigureAwait(false);
-                await OpenWebSocketAsync(cancellationToken).ConfigureAwait(false);
+                WebSocket = new LXWebSocket(HttpUtils.MakeWebSocketUri(Address), this, this, CtsConnection.Token);
+                Session = new Session(WebSocket);
+                await CheckMiniserverReachableAsync(CtsConnection.Token).ConfigureAwait(false);
+                await OpenWebSocketAsync(CtsConnection.Token).ConfigureAwait(false);
                 _authenticator = CreateAuthenticator();
-                await _authenticator.AuthenticateAsync(cancellationToken).ConfigureAwait(false);
+                await _authenticator.AuthenticateAsync(CtsConnection.Token).ConfigureAwait(false);
                 ChangeState(State.Open);
             }
             catch
@@ -228,47 +136,65 @@ namespace Loxone.Client
             }
         }
 
-        private void CheckBeforeOperation()
+
+
+        public void Dispose()
         {
-            CheckDisposed();
-            CheckState(State.Open);
+            Dispose(true);
+            GC.SuppressFinalize(this);
         }
 
         public async Task<StructureFile> DownloadStructureFileAsync(CancellationToken cancellationToken)
         {
             CheckBeforeOperation();
-            string s = await _webSocket.RequestStringAsync("data/LoxAPP3.json", cancellationToken).ConfigureAwait(false);
+            string s = await WebSocket.RequestStringAsync("data/LoxAPP3.json", cancellationToken).ConfigureAwait(false);
             return StructureFile.Parse(s);
         }
 
         public async Task<DateTime> GetStructureFileLastModifiedDateAsync(CancellationToken cancellationToken)
         {
             CheckBeforeOperation();
-            var response = await _webSocket.RequestCommandAsync<DateTime>("jdev/sps/LoxAPPversion3", _defaultEncryption, cancellationToken).ConfigureAwait(false);
+            var response = await WebSocket.RequestCommandAsync<DateTime>("jdev/sps/LoxAPPversion3", _defaultEncryption, cancellationToken).ConfigureAwait(false);
             return DateTime.SpecifyKind(response.Value, DateTimeKind.Local);
         }
 
         public async Task EnableStatusUpdatesAsync(CancellationToken cancellationToken)
         {
             CheckBeforeOperation();
-            var response = await _webSocket.RequestCommandAsync<string>("jdev/sps/enablebinstatusupdate", _defaultEncryption, cancellationToken).ConfigureAwait(false);
+            var response = await WebSocket.RequestCommandAsync<string>("jdev/sps/enablebinstatusupdate", _defaultEncryption, cancellationToken).ConfigureAwait(false);
         }
 
         internal async Task<LXResponse<string>> Command(CancellationToken cancellation, Command command)
         {
             CheckBeforeOperation();
-            var response = await _webSocket.RequestCommandAsync<string>($"jdev/sps/io/{command}", _defaultEncryption, cancellation).ConfigureAwait(false);
+            var response = await WebSocket.RequestCommandAsync<string>($"jdev/sps/io/{command}", _defaultEncryption, cancellation).ConfigureAwait(false);
             return response;
         }
 
+        void IErrorHandler.HandleError(Exception ex)
+        {
+            if(AnyException==null)AnyException = ex;
+            if (ex is WebSocketException || ex is MiniserverTransportException)
+            {
+                CtsConnection.Cancel(); // cancel connection, thre is error anyway
+            }
+            else
+            {
+                Logger.LogWarning("In fire and forget: ",ex);
+            }
+        }
+
+
+        private void CheckBeforeOperation()
+        {
+            CheckDisposed();
+            CheckState(State.Open);
+        }
         private void CheckBeforeOpen()
         {
-            if (_baseUri == null)
-            {
-                throw new InvalidOperationException(string.Format(CultureInfo.CurrentCulture, Strings.MiniserverConnection_MustBeSetBeforeOpenFmt, nameof(Address)));
-            }
-
-            if (_credentials == null)
+            CheckDisposed();
+            if (Address == null) throw new InvalidOperationException(string.Format(CultureInfo.CurrentCulture, Strings.MiniserverConnection_MustBeSetBeforeOpenFmt, nameof(Address)));
+            if (Credentials == null)
             {
                 // Here we only check whether ICredentials is null. If ICredentials.GetCredential
                 // returns null then the exception is thrown from OpenWebSocketAsync.
@@ -278,88 +204,14 @@ namespace Loxone.Client
 
         private async Task CheckMiniserverReachableAsync(CancellationToken cancellationToken)
         {
-            var api = await _webSocket.CheckMiniserverReachableAsync(cancellationToken).ConfigureAwait(false);
-            _miniserverInfo.Update(api);
+            var api = await WebSocket.CheckMiniserverReachableAsync(cancellationToken).ConfigureAwait(false);
+            MiniserverInfo.Update(api);
         }
 
         private async Task OpenWebSocketAsync(CancellationToken cancellationToken)
         {
-            await _webSocket.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await WebSocket.OpenAsync(cancellationToken).ConfigureAwait(false);
             StartKeepAliveTimer();
-        }
-
-        private Transport.Authenticator CreateAuthenticator()
-        {
-            var credentials = _credentials.GetCredential(_baseUri, HttpUtils.BasicAuthenticationScheme);
-            if (credentials == null)
-            {
-                throw new InvalidOperationException();
-            }
-
-            return CreateAuthenticator(credentials);
-        }
-
-        private Transport.Authenticator CreateAuthenticator(NetworkCredential credentials)
-        {
-            Contract.Requires(credentials != null);
-
-            var method = _authenticationMethod;
-
-            if (method == MiniserverAuthenticationMethod.Default)
-            {
-                if (_miniserverInfo.FirmwareVersion < _tokenAuthenticationThresholdVersion)
-                {
-                    method = MiniserverAuthenticationMethod.Password;
-                }
-                else
-                {
-                    method = MiniserverAuthenticationMethod.Token;
-                }
-            }
-
-            switch (method)
-            {
-                case MiniserverAuthenticationMethod.Password:
-                    return new Transport.PasswordAuthenticator(_session, credentials);
-                case MiniserverAuthenticationMethod.Token:
-                    return new Transport.TokenAuthenticator(_session, credentials);
-            }
-
-            throw new ArgumentOutOfRangeException(nameof(AuthenticationMethod));
-        }
-
-        private void CheckState(State requiredState)
-        {
-            if (_state != (int)requiredState)
-            {
-                throw new InvalidOperationException();
-            }
-        }
-
-        /// <summary>
-        /// Atomically checks the state of the connection and changes it to a new state.
-        /// </summary>
-        /// <param name="newState">New state.</param>
-        /// <param name="requiredState">Required current state of the connection.</param>
-        /// <exception cref="InvalidOperationException">
-        /// The current connection state does not match <paramref name="requiredState"/>.
-        /// </exception>
-        private void ChangeState(State newState, State requiredState)
-        {
-            if (Interlocked.CompareExchange(ref _state, (int)newState, (int)requiredState) != (int)requiredState)
-            {
-                throw new InvalidOperationException();
-            }
-        }
-
-        /// <summary>
-        /// Atomically changes state of the connection.
-        /// </summary>
-        /// <param name="newState">New state.</param>
-        /// <returns>Previous state.</returns>
-        private State ChangeState(State newState)
-        {
-            return (State)Interlocked.Exchange(ref _state, (int)newState);
         }
 
         private void StartKeepAliveTimer()
@@ -372,53 +224,65 @@ namespace Loxone.Client
         {
             if (!IsDisposed)
             {
-
-            }
+                // TODO keep alive
+            };
         }
 
-        Transport.Encryptor Transport.IEncryptorProvider.GetEncryptor(CommandEncryption mode)
+        private Authenticator CreateAuthenticator()
         {
-            switch (mode)
-            {
-                case CommandEncryption.None:
-                    return null;
-                case CommandEncryption.Request:
-                    return LazyInitializer.EnsureInitialized(ref _requestOnlyEncryptor, () => new Transport.Encryptor(_session, CommandEncryption.Request));
-                case CommandEncryption.RequestAndResponse:
-                    return LazyInitializer.EnsureInitialized(ref _requestAndResponseEncryptor, () => new Transport.Encryptor(_session, CommandEncryption.RequestAndResponse));
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(mode));
-            }
+            var credentials = Credentials.GetCredential(Address, HttpUtils.BasicAuthenticationScheme);
+            if (credentials == null) throw new InvalidOperationException();
+            return CreateAuthenticator(credentials);
         }
 
-        void Transport.IEventListener.OnValueStateChanged(System.Collections.Generic.IReadOnlyList<ValueState> values)
+        private Authenticator CreateAuthenticator(NetworkCredential credentials)
         {
-            var handler = ValueStateChanged;
-            if (handler != null)
+            Contract.Requires(credentials != null);
+
+            var method = AuthenticationMethod;
+
+            if (method == MiniserverAuthenticationMethod.Default)
             {
-                var e = new ValueStateEventArgs(values);
-                handler(this, e);
+                if (MiniserverInfo.FirmwareVersion < _tokenAuthenticationThresholdVersion) method = MiniserverAuthenticationMethod.Password;
+                else method = MiniserverAuthenticationMethod.Token;
             }
+
+            return method switch
+            {
+                MiniserverAuthenticationMethod.Password => new PasswordAuthenticator(Session, credentials),
+                MiniserverAuthenticationMethod.Token => new TokenAuthenticator(Session, credentials),
+                _ => throw new ArgumentOutOfRangeException(nameof(AuthenticationMethod)),
+            };
         }
 
-        void Transport.IEventListener.OnTextStateChanged(System.Collections.Generic.IReadOnlyList<TextState> values)
+        private void CheckState(State requiredState)
         {
-            var handler = TextStateChanged;
-            if (handler != null)
+            if (_state != (int)requiredState) throw new InvalidOperationException();
+        }
+
+        private void ChangeState(State newState, State requiredState)
+        {
+            if (Interlocked.CompareExchange(ref _state, (int)newState, (int)requiredState) != (int)requiredState) throw new InvalidOperationException();
+        }
+
+        private State ChangeState(State newState) => (State)Interlocked.Exchange(ref _state, (int)newState);
+
+        Encryptor IEncryptorProvider.GetEncryptor(CommandEncryption mode)
+        {
+            return mode switch
             {
-                var e = new TextStateEventArgs(values);
-                handler(this, e);
-            }
+                CommandEncryption.None => null,
+                CommandEncryption.Request => LazyInitializer.EnsureInitialized(ref _requestOnlyEncryptor, () => new Encryptor(Session, CommandEncryption.Request)),
+                CommandEncryption.RequestAndResponse => LazyInitializer.EnsureInitialized(ref _requestAndResponseEncryptor, () => new Encryptor(Session, CommandEncryption.RequestAndResponse)),
+                _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+            };
         }
 
         #region IDisposable Implementation
 
         protected void CheckDisposed()
         {
-            if (IsDisposed)
-            {
-                throw new ObjectDisposedException(this.GetType().FullName);
-            }
+            if (IsDisposed) throw new ObjectDisposedException(this.GetType().FullName);
         }
 
         protected virtual void Dispose(bool disposing)
@@ -428,7 +292,6 @@ namespace Loxone.Client
                 // May be already disposing on another thread.
                 if (Interlocked.Exchange(ref _state, (int)State.Disposing) != (int)State.Disposing)
                 {
-                    // Disconnect event handlers.
                     ValueStateChanged = null;
                     TextStateChanged = null;
 
@@ -436,21 +299,13 @@ namespace Loxone.Client
                     {
                         _keepAliveTimer?.Dispose();
                         _authenticator?.Dispose();
-                        _session?.Dispose();
-                        _webSocket?.Dispose();
+                        Session?.Dispose();
+                        WebSocket?.Dispose();
                     }
-
                     _state = (int)State.Disposed;
                 }
             }
         }
-
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
         #endregion
     }
 }

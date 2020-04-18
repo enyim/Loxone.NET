@@ -20,33 +20,35 @@ namespace Loxone.Client.Transport
 
     internal sealed class LXWebSocket : LXClient
     {
-        private ClientWebSocket _webSocket;
-
+        private ClientWebSocket _webSocket; // TODO maybe reusable static
         private CancellationTokenSource _receiveLoopCancellation;
-
         private ICommandHandler _pendingCommand;
-
         private LXHttpClient _httpClient;
-
         private readonly IEncryptorProvider _encryptorProvider;
+        private readonly IConnection _connection;
 
-        private readonly IEventListener _eventListener;
+        protected internal override LXClient HttpClient => _httpClient;
 
-        protected internal override LXClient HttpClient => _httpClient??= new LXHttpClient(HttpUtils.MakeHttpUri(BaseUri));
-
-        public LXWebSocket(Uri baseUri, IEncryptorProvider encryptorProvider, IEventListener eventListener) : base(baseUri)
+        public LXWebSocket(Uri baseUri, IEncryptorProvider encryptorProvider, IConnection connection,CancellationToken ct) : base(HttpUtils.MakeWebSocketUri(baseUri), ct)
         {
-            Contract.Requires(HttpUtils.IsWebSocketUri(baseUri));
+            
             this._encryptorProvider = encryptorProvider;
-            this._eventListener = eventListener;
+            this._connection = connection;
+            this._httpClient = new LXHttpClient(baseUri, ct);
+        }
+
+        public async Task CloseAsync()
+        {
+            var cts = new CancellationTokenSource();
+            cts.CancelAfter(1000);
+            await _webSocket.CloseAsync(WebSocketCloseStatus.EndpointUnavailable, "Cancellation requested",cts.Token);
         }
 
         protected override async Task OpenInternalAsync(CancellationToken cancellationToken)
         {
             Contract.Requires(_webSocket == null);
-
             _webSocket = new ClientWebSocket();
-            _webSocket.Options.AddSubProtocol("remotecontrol"); // HACK - Probably should check scheme for http/https
+            _webSocket.Options.AddSubProtocol("remotecontrol"); // Probably should check scheme for http/https
             await _webSocket.ConnectAsync(new UriBuilder(BaseUri) { Path = "ws/rfc6455" }.Uri, cancellationToken).ConfigureAwait(false);
             StartReceiveLoop();
         }
@@ -54,32 +56,26 @@ namespace Loxone.Client.Transport
         public void StartReceiveLoop()
         {
             Contract.Requires(_receiveLoopCancellation == null, "Receive loop is already running");
-
-            _receiveLoopCancellation = new CancellationTokenSource();
-
-            // Fire and forget, no await here.
-            ReceiveLoopAsync();
+            _receiveLoopCancellation = CancellationTokenSource.CreateLinkedTokenSource(ConnectionToken);
+            _connection.ReceiveTask = ReceiveLoopAsync(); // assigned to variable for checking
         }
 
-        private async void ReceiveLoopAsync()
+        private async Task ReceiveLoopAsync()
         {
-            Contract.Requires(_receiveLoopCancellation != null, "Receive loop is not running");
-
-            bool quit = false;
-
-            while (!quit)
+            try
             {
-                try
+                while (true)
                 {
-                    if (_receiveLoopCancellation.IsCancellationRequested) break;
+                    if (_receiveLoopCancellation == null) throw new MiniserverTransportException("Receive loop is not running");
+                    if (_receiveLoopCancellation.IsCancellationRequested) throw new MiniserverTransportException("Receive loop is cancelled");
                     var header = await ReceiveHeaderAsync(_receiveLoopCancellation.Token).ConfigureAwait(false);
                     Contract.Assert(!header.IsLengthEstimated);
                     await DispatchMessageAsync(header, _receiveLoopCancellation.Token).ConfigureAwait(false);
                 }
-                catch
-                {
-                    quit = true;
-                }
+            }
+            finally
+            {
+                await CloseAsync();
             }
         }
 
@@ -150,7 +146,7 @@ namespace Loxone.Client.Transport
                     length -= 24;
                 }
 
-                _eventListener.OnValueStateChanged(states);
+                _connection.OnValueStateChanged(states);
             }
 
             if (length > 0)
@@ -176,7 +172,7 @@ namespace Loxone.Client.Transport
                     length -= processed;
                 }
 
-                _eventListener.OnTextStateChanged(states);
+                _connection.OnTextStateChanged(states);
             }
 
             if (length > 0)

@@ -19,11 +19,11 @@ namespace Loxone.Client.Transport
 
     internal sealed class LXHttpClient : LXClient
     {
-        private HttpClient _httpClient;
+        private HttpClient _httpClient; // TODO maybe static and reusable
 
         protected internal override LXClient HttpClient => this;
 
-        public LXHttpClient(Uri baseUri) : base(baseUri)
+        public LXHttpClient(Uri baseUri,CancellationToken ct) : base(baseUri,ct)
         {
             Contract.Requires(HttpUtils.IsHttpUri(baseUri));
         }
@@ -33,20 +33,12 @@ namespace Loxone.Client.Transport
             if (_httpClient == null)
             {
                 // TODO maybe custom support for SSL - dns proxy for loxone
-                // HttpClientHandler is an HttpMessageHandler with a common set of properties
-                //var handler = new HttpClientHandler();
-                //handler.ServerCertificateCustomValidationCallback = (msg, crt, chain, policy) =>
-                //    {
-                //        return true;
-                //    };
                 var httpClient = new HttpClient();
                 httpClient.BaseAddress = BaseUri;
                 httpClient.DefaultRequestHeaders.Accept.Clear();
                 httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(HttpUtils.JsonMediaType));
-                if (Interlocked.CompareExchange(ref _httpClient, httpClient, null) != null)
-                {
-                    httpClient.Dispose();
-                }
+
+                if (Interlocked.CompareExchange(ref _httpClient, httpClient, null) != null) httpClient.Dispose();
             }
         }
 
@@ -59,21 +51,14 @@ namespace Loxone.Client.Transport
             if (response.IsSuccessStatusCode && HttpUtils.IsJsonMediaType(response.Content.Headers.ContentType))
             {
                 string contentStr = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                var lxResponse = Transport.LXResponse<T>.Deserialize(contentStr);
+                var lxResponse = LXResponse<T>.Deserialize(contentStr);
                 return lxResponse;
             }
-            else
-            {
-                throw new MiniserverTransportException();
-            }
+            else throw new MiniserverTransportException();
         }
 
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _httpClient?.Dispose();
-            }
+        protected override void Dispose(bool disposing) {
+            if(disposing) _httpClient?.Dispose();
         }
     }
 }

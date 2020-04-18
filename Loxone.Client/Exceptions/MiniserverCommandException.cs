@@ -1,4 +1,4 @@
-﻿// ----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // <copyright file="MiniserverCommandException.cs">
 //     Copyright (c) The Loxone.NET Authors.  All rights reserved.
 // </copyright>
@@ -17,26 +17,24 @@ namespace Loxone.Client.Transport
     [Serializable]
     public class MiniserverCommandException : MiniserverTransportException
     {
-        private int _statusCode;
-
-        public int StatusCode => _statusCode;
+        public int StatusCode { get; }
 
         public MiniserverCommandException(int statusCode)
             : base(string.Format(CultureInfo.CurrentCulture, Strings.MiniserverCommandException_MessageFmt, statusCode))
         {
-            this._statusCode = statusCode;
+            this.StatusCode = statusCode;
         }
 
         public MiniserverCommandException(int statusCode, string message)
             : base(message)
         {
-            this._statusCode = statusCode;
+            this.StatusCode = statusCode;
         }
 
         public MiniserverCommandException(int statusCode, string message, Exception innerException)
             : base(message, innerException)
         {
-            this._statusCode = statusCode;
+            this.StatusCode = statusCode;
         }
 
         protected MiniserverCommandException(SerializationInfo info, StreamingContext context)

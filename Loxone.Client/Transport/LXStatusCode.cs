@@ -1,4 +1,4 @@
-﻿// ----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // <copyright file="LXStatusCode.cs">
 //     Copyright (c) The Loxone.NET Authors.  All rights reserved.
 // </copyright>
@@ -14,9 +14,6 @@ namespace Loxone.Client.Transport
     {
         public const int OK = 200;
 
-        public static bool IsSuccess(int code)
-        {
-            return code == OK;
-        }
+        public static bool IsSuccess(int code) => code == OK;
     }
 }

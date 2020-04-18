@@ -21,12 +21,17 @@ namespace Loxone.Client.Transport
     {
         protected readonly Uri BaseUri;
 
+        public Exception ClosedException { get; private set; }
+
+        protected internal CancellationToken ConnectionToken {get;}
+
         internal static readonly Encoding Encoding = Encoding.UTF8;
 
         protected internal abstract LXClient HttpClient { get; }
 
-        protected LXClient(Uri baseUri)
+        protected LXClient(Uri baseUri, CancellationToken cts)
         {
+            this.ConnectionToken = cts;
             Contract.Requires(baseUri != null);
             Contract.Requires(string.IsNullOrEmpty(baseUri.PathAndQuery));
             this.BaseUri = baseUri;
@@ -67,20 +72,19 @@ namespace Loxone.Client.Transport
 
         public async Task<LXResponse<T>> RequestCommandAsync<T>(string command, CommandEncryption encryption, RequestCommandValidation validation, CancellationToken cancellationToken)
         {
-            var response = await RequestCommandInternalAsync<T>(command, encryption, cancellationToken).ConfigureAwait(false);
-
-            string control = Uri.EscapeUriString(response.Control);
-            if ((validation & RequestCommandValidation.Command) != 0 && !AreCommandsEqual(command, control))
+            try
             {
-                throw new MiniserverTransportException();
-            }
+                var response = await RequestCommandInternalAsync<T>(command, encryption, cancellationToken).ConfigureAwait(false);
 
-            if ((validation & RequestCommandValidation.Status) != 0 && !LXStatusCode.IsSuccess(response.Code))
+                string control = Uri.EscapeUriString(response.Control);
+                if ((validation & RequestCommandValidation.Command) != 0 && !AreCommandsEqual(command, control)) throw new MiniserverTransportException();
+                if ((validation & RequestCommandValidation.Status) != 0 && !LXStatusCode.IsSuccess(response.Code)) throw new MiniserverCommandException(response.Code);
+                return response;
+            }
+            catch (ObjectDisposedException)
             {
-                throw new MiniserverCommandException(response.Code);
+                throw new MiniserverTransportException("No connection "+this.ClosedException?.Message, this.ClosedException);
             }
-
-            return response;
         }
 
         public Task<LXResponse<T>> RequestCommandAsync<T>(string command, CommandEncryption encryption, CancellationToken cancellationToken)

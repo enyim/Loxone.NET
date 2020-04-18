@@ -58,16 +58,8 @@ namespace Loxone.Client.Transport
                 permission = (int)tokenCredentials.Permission;
                 uuid = tokenCredentials.ClientID;
             }
-            else
-            {
-                permission = (int)TokenPermission.Web;
-            }
-
-            if (uuid==default)
-            {
-                uuid = MachineNameUuid.Value;
-            }
-
+            else permission = (int)TokenPermission.Web;
+            if (uuid==default) uuid = MachineNameUuid.Value;
             info = tokenCredentials?.ClientName ?? "Loxone.NET";
             info = Uri.EscapeUriString(info);
             return $"jdev/sys/gettoken/{hash}/{Credentials.UserName}/{permission}/{uuid}/{info}";

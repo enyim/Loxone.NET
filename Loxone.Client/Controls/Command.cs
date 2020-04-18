@@ -11,50 +11,33 @@
 namespace Loxone.Client.Controls
 {
     using System;
-    using System.Threading;
     using System.Threading.Tasks;
     using Microsoft.Extensions.Logging;
 
     public class Command
     {
-        private readonly Uuid _uuid;
-
-        public Uuid Uuid => _uuid;
-
-        private readonly string _command;
-
-        public string Cmd => _command;
-
         private string[] _args;
-
-        public string[] Args => _args??= new string[]{};
 
         public Command(Uuid uuid, string command, string[] args = null)
         {
-            this._uuid = uuid;
-            this._command = command;
+            this.Uuid = uuid;
+            this.Cmd = command;
             this._args = args;
         }
 
-        public override string ToString()
-        {
-            return $"{Uuid}/{Cmd}{String.Join("/",Args)}";
-        }
+        public Uuid Uuid { get; }
+        public string Cmd { get; }
+        public string[] Args => _args ??= new string[] { };
 
-        public async void Execute(MiniserverContext? context, Action<string> action = null)
+        public override string ToString() => $"{Uuid}/{Cmd}{String.Join("/", Args)}";
+
+        public async Task ExecuteAsync(MiniserverContext context, Action<string,int> action = null)
         {
-            try
-            {
                 if (context != null)
                 {
-                    var res = await context.Connection.Command(default, this);
-                    //if (action != null) await action.Invoke() - TODO support
+                    var res = await context?.Connection.Command(default, this);
+                    action?.Invoke(res?.Value, res.Code);
                 }
-            }
-            catch(MiniserverException ex)
-            {
-                context?.Logger.Log(LogLevel.Warning,$"Sending: {Uuid}->{Cmd}",ex);
-            }
         }
     }
 }

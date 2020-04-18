@@ -13,29 +13,46 @@ namespace Loxone.Client.Controls
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using static Loxone.Client.Transport.TaskUtilities;
 
     public class Control
     {
+        /// <summary>
+        /// Register new supported controls
+        /// </summary>
         private static readonly Dictionary<string, Func<Control>> _factories = new Dictionary<string, Func<Control>>(1)
         {
             {  "Switch", () => new Switch() },
         };
 
-        private Transport.Control _innerControl;
-
-        internal Transport.Control InnerControl
+        protected Control()
         {
-            get => _innerControl;
-            private set
-            {
-                _innerControl = value;
-                Initialize();
-            }
         }
 
-        private MiniserverContext? _context;
+        /// <summary>
+        /// Init values on control
+        /// </summary>
+        protected virtual void Initialize() { }
 
-        public MiniserverContext? Context { get => _context; internal set => _context = value; }
+        /// <summary>
+        /// Update value of control
+        /// </summary>
+        /// <param name="state"></param>
+        protected virtual void UpdateValueState(ValueState state) { }
+
+        /// <summary>
+        /// What to do with state chnage
+        /// Purpose:
+        /// i.e. subscribe to specific control
+        /// </summary>
+        public event Action<Control> OnStateChange;
+
+        /// <summary>
+        /// What to do with response from server
+        /// string - message
+        /// int - response code
+        /// </summary>
+        public event Action<string, int> OnCommandRespose;
 
         public Uuid Uuid => InnerControl.Uuid;
 
@@ -47,25 +64,9 @@ namespace Loxone.Client.Controls
 
         public Category Category { get; internal set; }
 
-        public Action<Control> OnStateChange; // notify something
 
+        internal protected void Execute(Command command) => command.ExecuteAsync(Context, OnCommandRespose).FireAndForgetSafeAsync(Context.Connection);
 
-        protected Control()
-        {
-        }
-
-        protected virtual void Initialize()
-        {
-        }
-
-        protected void Execute(Command command)
-        {
-            command.Execute(Context); // TODO action on response
-        }
-
-        protected virtual void UpdateValueState(ValueState state)
-        {
-        }
 
         internal void OnValueStateUpdate(ValueState state){
             UpdateValueState(state);
@@ -81,15 +82,25 @@ namespace Loxone.Client.Controls
 
         internal static Control CreateControl(Transport.Control innerControl)
         {
-            if (!_factories.TryGetValue(innerControl.ControlType, out var factory))
-            {
-                factory = () => new Control();
-            }
-
+            if (!_factories.TryGetValue(innerControl.ControlType, out var factory)) factory = () => new Control();
             var control = factory();
             control.InnerControl = innerControl;
             return control;
         }
+
+        private Transport.Control _innerControl;
+
+        internal Transport.Control InnerControl
+        {
+            get => _innerControl;
+            private set
+            {
+                _innerControl = value;
+                Initialize();
+            }
+        }
+
+        internal MiniserverContext Context { get; set; }
 
     }
 }

@@ -19,9 +19,7 @@ namespace Loxone.Client.Transport
     {
         private object _lock = new object();
 
-        private readonly LXClient _client;
-
-        public LXClient Client => _client;
+        public LXClient Client { get; }
 
         private Task<RSA> _publicKeyTask;
         private bool _publicKeyTaskInitialized;
@@ -39,7 +37,7 @@ namespace Loxone.Client.Transport
 
         public Session(LXClient client)
         {
-            this._client = client;
+            this.Client = client;
         }
 
         public Task<RSA> GetMiniserverPublicKeyAsync(CancellationToken cancellationToken) =>
@@ -47,7 +45,7 @@ namespace Loxone.Client.Transport
 
         private async Task<RSA> GetMiniserverPublicKeyInternalAsync(CancellationToken cancellationToken)
         {
-            var response = await _client.HttpClient.RequestCommandAsync<string>("jdev/sys/getPublicKey", CommandEncryption.None, cancellationToken).ConfigureAwait(false);
+            var response = await Client.HttpClient.RequestCommandAsync<string>("jdev/sys/getPublicKey", CommandEncryption.None, cancellationToken).ConfigureAwait(false);
             var pem = response.Value;
             pem = pem.Replace("-----BEGIN CERTIFICATE-----", String.Empty);
             pem = pem.Replace("-----END CERTIFICATE-----", String.Empty);

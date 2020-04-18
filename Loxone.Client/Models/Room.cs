@@ -1,4 +1,4 @@
-﻿// ----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // <copyright file="Room.cs">
 //     Copyright (c) The Loxone.NET Authors.  All rights reserved.
 // </copyright>
@@ -29,11 +29,7 @@ namespace Loxone.Client
 
         public bool Equals(Room other)
         {
-            if (other == null)
-            {
-                return false;
-            }
-
+            if (other == null) return false;
             return this.Uuid == other.Uuid;
         }
 

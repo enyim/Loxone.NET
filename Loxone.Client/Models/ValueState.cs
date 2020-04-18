@@ -1,4 +1,4 @@
-﻿// ----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // <copyright file="ValueState.cs">
 //     Copyright (c) The Loxone.NET Authors.  All rights reserved.
 // </copyright>
@@ -14,23 +14,15 @@ namespace Loxone.Client
 
     public readonly struct ValueState
     {
-        private readonly Uuid _control;
-
-        public Uuid Control => _control;
-
-        private readonly double _value;
-
-        public double Value => _value;
+        public Uuid Control { get; }
+        public double Value { get; }
 
         public ValueState(Uuid control, double value)
         {
-            this._control = control;
-            this._value = value;
+            this.Control = control;
+            this.Value = value;
         }
 
-        public override string ToString()
-        {
-            return String.Concat("value ", _control.ToString(), ": ", _value.ToString());
-        }
+        public override string ToString() => $"{Control}:{Value}";
     }
 }

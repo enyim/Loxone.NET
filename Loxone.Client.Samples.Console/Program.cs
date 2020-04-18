@@ -13,6 +13,7 @@ namespace Loxone.Client.Samples.Console
     using System;
     using System.IO;
     using System.Linq;
+    using System.Net.WebSockets;
     using System.Threading;
     using System.Threading.Tasks;
     using Loxone.Client.Controls;
@@ -20,92 +21,95 @@ namespace Loxone.Client.Samples.Console
 
     internal class Program
     {
-        private const string _miniserverAddress = "http://testminiserver.loxone.com:7779/";
         ILoggerFactory loggerFactory = LoggerFactory.Create(b => b.AddFilter("Microsoft", LogLevel.Warning));
 
-        private async Task RunAsync(CancellationToken cancellationToken)
+        private async Task RunAsync(CancellationTokenSource cts)
         {
-            var connection = new MiniserverConnection(new Uri(_miniserverAddress));
-            //using (connection)
-            //{
-            // Specify Miniserver username and password.
-            connection.Credentials = new TokenCredential("web", "web", TokenPermission.Web, default, "Loxone.NET Sample Console");
+            var password = "web";
+            var login = "web";
+            var address = "http://testminiserver.loxone.com:7779/";
 
-            Console.WriteLine($"Opening connection to miniserver at {connection.Address}...");
-            await connection.OpenAsync(cancellationToken);
-            Console.WriteLine($"Connected to Miniserver {connection.MiniserverInfo.SerialNumber}, FW version {connection.MiniserverInfo.FirmwareVersion}");
+            var logger = loggerFactory.CreateLogger<MiniserverContext>();
 
-            // Load cached structure file or download a fresh one if the local file does not exist or is outdated.
-            string structureFileName = $"LoxAPP3.{connection.MiniserverInfo.SerialNumber}.json";
-            StructureFile structureFile = null;
-            if (File.Exists(structureFileName))
-            {
-                structureFile = await StructureFile.LoadAsync(structureFileName, cancellationToken);
-                var lastModified = await connection.GetStructureFileLastModifiedDateAsync(cancellationToken);
-                if (lastModified > structureFile.LastModified)
-                {
-                    // Structure file cached locally is outdated, throw it away.
-                    Console.WriteLine("Cached structure file is outdated.");
-                    structureFile = null;
-                }
-            }
-
-            if (structureFile == null)
-            {
-                // The structure file either did not exist on disk or was outdated. Download a fresh copy from
-                // miniserver right now.
-                Console.WriteLine("Downloading structure file...");
-                structureFile = await connection.DownloadStructureFileAsync(cancellationToken);
-
-                // Save it locally on disk.
-                await structureFile.SaveAsync(structureFileName, cancellationToken);
-            }
-
-            Console.WriteLine($"Structure file loaded.");
-            Console.WriteLine($"  Culture: {structureFile.Localization.Culture}");
-            Console.WriteLine($"  Last modified: {structureFile.LastModified}");
-            Console.WriteLine($"  Miniserver type: {structureFile.MiniserverInfo.MiniserverType}");
-
-            connection.ValueStateChanged += (sender, e) =>
-            {
-                foreach (var change in e.ValueStates)
-                {
-                    Console.WriteLine(change);
-                }
-            };
-
-            connection.TextStateChanged += (sender, e) =>
-            {
-                foreach (var change in e.TextStates)
-                {
-                        //Console.WriteLine(change);
-                    }
-            };
-
-            var context = new MiniserverContext(structureFile, connection, false, loggerFactory);
-            context.Controls.Where(p => p.GetType() == typeof(Switch)).ToList().ForEach(p => p.OnStateChange += (c) => Console.WriteLine(c.Name));
-            Console.WriteLine("Enabling status updates...");
-
+            var connection = new MiniserverConnection(new Uri(address),logger);
+            MiniserverContext miniserverContext = null;
+            connection.Credentials = new TokenCredential(login, password, TokenPermission.Web, default, "Loxone.NET Sample Console");
             try
             {
-                await connection.EnableStatusUpdatesAsync(cancellationToken);
+                Console.WriteLine($"Opening connection to miniserver at {connection.Address}...");
+                await connection.OpenAsync(cts.Token);
+                Console.WriteLine($"Connected to Miniserver {connection.MiniserverInfo.SerialNumber}, FW version {connection.MiniserverInfo.FirmwareVersion}");
+
+                // Load cached structure file or download a fresh one if the local file does not exist or is outdated.
+                string structureFileName = $"LoxAPP3.{connection.MiniserverInfo.SerialNumber}.json";
+                StructureFile structureFile = null;
+                if (File.Exists(structureFileName))
+                {
+                    structureFile = await StructureFile.LoadAsync(structureFileName, cts.Token);
+                    var lastModified = await connection.GetStructureFileLastModifiedDateAsync(cts.Token);
+                    if (lastModified > structureFile.LastModified)
+                    {
+                        // Structure file cached locally is outdated, throw it away.
+                        Console.WriteLine("Cached structure file is outdated.");
+                        structureFile = null;
+                    }
+                }
+
+                if (structureFile == null)
+                {
+                    // The structure file either did not exist on disk or was outdated. Download a fresh copy from
+                    // miniserver right now.
+                    Console.WriteLine("Downloading structure file...");
+                    structureFile = await connection.DownloadStructureFileAsync(cts.Token);
+
+                    // Save it locally on disk.
+                    await structureFile.SaveAsync(structureFileName, cts.Token);
+                }
+
+                Console.WriteLine($"Structure file loaded.");
+                Console.WriteLine($"  Culture: {structureFile.Localization.Culture}");
+                Console.WriteLine($"  Last modified: {structureFile.LastModified}");
+                Console.WriteLine($"  Miniserver type: {structureFile.MiniserverInfo.MiniserverType}");
+
+                connection.ValueStateChanged += (sender, e) =>
+                {
+                    foreach (var change in e) Console.WriteLine(change);
+                };
+
+                connection.TextStateChanged += (sender, e) =>
+                {
+                    foreach (var change in e) Console.WriteLine("Text " + change);
+                };
+
+                // Create context
+                miniserverContext = new MiniserverContext(structureFile, logger)
+                {
+                    Connection = connection
+                };
+
+                Console.WriteLine("Enabling status updates...");
+                await connection.EnableStatusUpdatesAsync(cts.Token);                
+
+                // Random example of command
+                await Task.Delay(1000);
+                var a = miniserverContext.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First();
+                a.Active = true;
+
+                await Task.Delay(10 * 1000);
+                var b = miniserverContext.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First();
+                b.Active = false;
+
+                // Await close
+                await connection.IsClosedAsync();
             }
-            catch (Exception ex)
+            catch(Exception ex)
             {
-                Console.WriteLine(ex);
+                Console.WriteLine("Program inner: "+ ex);
             }
-
-            await Task.Delay(1000);
-            var a = context.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First();
-            a.Active = true;
-
-            await Task.Delay(10*1000);
-            var b = context.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First();
-            b.Active = false;
-
-
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
-            //}
+            finally
+            {
+                miniserverContext?.Dispose();
+            }
         }
 
         static async Task Main(string[] args)
@@ -120,9 +124,9 @@ namespace Loxone.Client.Samples.Console
 
             try
             {
-                await new Program().RunAsync(cancellationTokenSource.Token);
+                await new Program().RunAsync(cancellationTokenSource);
             }
-            catch (Exception ex) when (!System.Diagnostics.Debugger.IsAttached)
+            catch (Exception ex)
             {
                 if (!(ex is OperationCanceledException && cancellationTokenSource.IsCancellationRequested))
                 {

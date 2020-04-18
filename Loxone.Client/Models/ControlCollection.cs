@@ -37,12 +37,13 @@ namespace Loxone.Client
 
         internal void Clear(int? capacity)
         {
+            // In case of leaks dispose controls
             _toplevelControls.Clear();
             _toplevelControls.Capacity = capacity.GetValueOrDefault();
             _allControlsByUuid.Clear();
         }
 
-        internal void Add(Control control,MiniserverContext context=null)
+        internal void Add(Control control)
         {
             _toplevelControls.Add(control);
             _allControlsByUuid.Add(control.Uuid, control);

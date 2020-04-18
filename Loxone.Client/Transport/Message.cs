@@ -1,4 +1,4 @@
-﻿// ----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // <copyright file="Message.cs">
 //     Copyright (c) The Loxone.NET Authors.  All rights reserved.
 // </copyright>
@@ -12,18 +12,14 @@ namespace Loxone.Client.Transport
 {
     internal struct Message<TValue>
     {
-        private MessageHeader _header;
+        public MessageHeader Header { get; }
 
-        public MessageHeader Header => _header;
-
-        private readonly LXResponse<TValue> _response;
-
-        public LXResponse<TValue> Response => _response;
+        public LXResponse<TValue> Response { get; }
 
         public Message(ref MessageHeader header, LXResponse<TValue> response)
         {
-            this._header = header;
-            this._response = response;
+            this.Header = header;
+            this.Response = response;
         }
     }
 }
