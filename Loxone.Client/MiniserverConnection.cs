@@ -36,19 +36,20 @@ namespace Loxone.Client
             Disposed
         }
         private volatile int _state;
-        private Timer _keepAliveTimer;
+        // Encrypt
         private Encryptor _requestOnlyEncryptor;
+        private Encryptor _requestAndResponseEncryptor;
+        private CommandEncryption _defaultEncryption = CommandEncryption.None;
+        // Auth
         private MiniserverAuthenticationMethod _authenticationMethod;
         private ICredentials _credentials;
-        private Encryptor _requestAndResponseEncryptor;
         private static readonly Version _tokenAuthenticationThresholdVersion = new Version(9, 0);
         private Authenticator _authenticator;
-        private CommandEncryption _defaultEncryption = CommandEncryption.None;
+        // Other
         private Task closedTask;
         // According to the documentation the Miniserver will close the connection if the
         // client doesn't send anything for more than 5 minutes.
-        private static readonly TimeSpan _defaultKeepAliveTimeout = TimeSpan.FromMinutes(3);
-        private TimeSpan _keepAliveTimeout = DefaultKeepAliveTimeout;
+        private TimeSpan _keepAliveTimeout = TimeSpan.FromMinutes(4);
 
         /// <summary>
         /// Constructor
@@ -61,15 +62,20 @@ namespace Loxone.Client
             Address = address;
             Logger = logger;
         }
+        // Closing and awaiters
         Task IConnection.ReceiveTask { get => closedTask; set =>closedTask=value; }
         public Task IsClosedAsync() => closedTask;
         public bool IsDisposed => _state >= (int)State.Disposing;
+
+
         public LXUri Address { get; private set; }
         public CancellationTokenSource CtsConnection { get; private set; }
         public MiniserverLimitedInfo MiniserverInfo { get; }
         public event EventHandler<IReadOnlyList<TextState>> TextStateChanged;
         public event EventHandler<IReadOnlyList<ValueState>> ValueStateChanged;
         public Exception AnyException { get; private set; }
+
+        // Auth
         public ICredentials Credentials
         {
             get => _credentials;
@@ -80,7 +86,6 @@ namespace Loxone.Client
                 _credentials = value;
             }
         }
-        public static TimeSpan DefaultKeepAliveTimeout => _defaultKeepAliveTimeout;
         public MiniserverAuthenticationMethod AuthenticationMethod
         {
             get => _authenticationMethod;
@@ -92,6 +97,8 @@ namespace Loxone.Client
                 _authenticationMethod = value;
             }
         }
+
+        // Timeout
         public TimeSpan KeepAliveTimeout
         {
             get => _keepAliveTimeout;
@@ -99,18 +106,18 @@ namespace Loxone.Client
             {
                 Contract.Requires(value > TimeSpan.Zero);
                 CheckDisposed();
+                WebSocket.SetKeepAlive(value);
                 _keepAliveTimeout = value;
             }
         }
 
+        // Other
         internal ILogger Logger { get; set; }
         internal LXWebSocket WebSocket { get; set; }
         internal Session Session { get; set; }
         internal MiniserverContext MiniserverContext { get; set; }
 
-        void IEventListener.OnValueStateChanged(IReadOnlyList<ValueState> values) => ValueStateChanged?.Invoke(this, values);
-        void IEventListener.OnTextStateChanged(IReadOnlyList<TextState> values) => TextStateChanged?.Invoke(this, values);
-
+       
         public async Task OpenAsync(CancellationToken cancellationToken)
         {
             CheckDisposed();
@@ -119,9 +126,11 @@ namespace Loxone.Client
 
             // new cts for connection
             CtsConnection = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            CtsConnection.Token.ThrowIfCancellationRequested();
             try
             {
                 WebSocket = new LXWebSocket(Address, this, this, CtsConnection.Token);
+                WebSocket.SetKeepAlive(_keepAliveTimeout);
                 Session = new Session(WebSocket);
                 await CheckMiniserverReachableAsync(CtsConnection.Token).ConfigureAwait(false);
                 await OpenWebSocketAsync(CtsConnection.Token).ConfigureAwait(false);
@@ -135,14 +144,6 @@ namespace Loxone.Client
                 Logger.LogWarning(ex,"Connecting WS");
                 throw ex;
             }
-        }
-
-
-
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
         }
 
         public async Task<StructureFile> DownloadStructureFileAsync(CancellationToken cancellationToken)
@@ -172,19 +173,21 @@ namespace Loxone.Client
             return response;
         }
 
+
+        void IEventListener.OnValueStateChanged(IReadOnlyList<ValueState> values) => ValueStateChanged?.Invoke(this, values);
+        void IEventListener.OnTextStateChanged(IReadOnlyList<TextState> values) => TextStateChanged?.Invoke(this, values);
         void IErrorHandler.HandleError(Exception ex)
         {
             if(AnyException==null)AnyException = ex;
-            if (ex is WebSocketException || ex is MiniserverTransportException)
-            {
-                CtsConnection.Cancel(); // cancel connection, thre is error anyway
-            }
-            else
-            {
-                Logger.LogWarning("In fire and forget: ",ex);
-            }
+            if (ex is WebSocketException || ex is MiniserverTransportException) CtsConnection.Cancel(); // cancel connection, there is error anyway
+            else Logger.LogWarning("In fire and forget: ", ex);
         }
 
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
 
         private void CheckBeforeOperation()
         {
@@ -216,17 +219,26 @@ namespace Loxone.Client
 
         private void StartKeepAliveTimer()
         {
-            Contract.Requires(_keepAliveTimer == null);
-            _keepAliveTimer = new Timer(KeepAliveTimerTick, null, _keepAliveTimeout, Timeout.InfiniteTimeSpan);
+            // https://github.com/graspea/Loxone.NET/issues/7
+            //Contract.Requires(_keepAliveTimer == null);
+            //_keepAliveTimer = new Timer(KeepAliveTimerTick, this, _keepAliveTimeout, Timeout.InfiniteTimeSpan);
         }
 
-        private void KeepAliveTimerTick(object state)
-        {
-            if (!IsDisposed)
-            {
-                // TODO keep alive
-            };
-        }
+        //private async void KeepAliveTimerTick(object state)
+        //{
+        //    var conn = (MiniserverConnection)state;
+        //    try
+        //    {
+        //        if (!conn.IsDisposed && !conn.CtsConnection.IsCancellationRequested)
+        //        {
+        //            await WebSocket.KeepAliveAsync(default);
+        //        };
+        //    }catch(WebSocketException ex)
+        //    {   //Cancel disconnected connection
+        //        conn.AnyException = ex;
+        //        conn.CtsConnection.Cancel();
+        //    }
+        //}
 
         private Authenticator CreateAuthenticator()
         {
@@ -240,7 +252,6 @@ namespace Loxone.Client
             Contract.Requires(credentials != null);
 
             var method = AuthenticationMethod;
-
             if (method == MiniserverAuthenticationMethod.Default)
             {
                 if (MiniserverInfo.FirmwareVersion < _tokenAuthenticationThresholdVersion) method = MiniserverAuthenticationMethod.Password;
@@ -297,7 +308,7 @@ namespace Loxone.Client
 
                     if (disposing)
                     {
-                        _keepAliveTimer?.Dispose();
+                        //_keepAliveTimer?.Dispose();
                         _authenticator?.Dispose();
                         Session?.Dispose();
                         WebSocket?.Dispose();

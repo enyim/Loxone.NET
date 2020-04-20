@@ -20,11 +20,13 @@ namespace Loxone.Client
         private Dictionary<Uuid, Control> _stateToControl = new Dictionary<Uuid, Control>();
         private MiniserverConnection connection;
         private StructureFile structureFile;
+        private event EventHandler<IReadOnlyList<TextState>> textStateChanged;
+        private event EventHandler<IReadOnlyList<ValueState>> valueStateChanged;
 
-        public MiniserverContext(StructureFile structureFile, ILogger logger, MiniserverConnection connection=null, bool ownsConnection=true)
+        public MiniserverContext(ILogger logger, StructureFile structureFile, MiniserverConnection connection=null, bool ownsConnection=true)
         {
             Logger = logger;
-            SetStructureFile(structureFile, nameof(structureFile), throwOnNull: true);
+            if(structureFile!=null)SetStructureFile(structureFile, nameof(structureFile), throwOnNull: true);
             if(connection != null) SetConnection(connection, ownsConnection, nameof(connection));
         }
 
@@ -57,6 +59,27 @@ namespace Loxone.Client
 
 
 
+        public void AddEventTextStateChanged(EventHandler<IReadOnlyList<TextState>> handler)
+        {
+            textStateChanged += handler;
+            if (Connection != null) Connection.TextStateChanged += handler;
+        }
+        public void AddEventValueStateChanged(EventHandler<IReadOnlyList<ValueState>> handler)
+        {
+            valueStateChanged += handler;
+            if (Connection != null) Connection.ValueStateChanged += handler;
+        }
+        public void RemoveEventTextStateChanged(EventHandler<IReadOnlyList<TextState>> handler)
+        {
+            textStateChanged -= handler;
+            if (Connection != null) Connection.TextStateChanged -= handler;
+        }
+        public void RemoveEventValueStateChanged(EventHandler<IReadOnlyList<ValueState>> handler)
+        {
+            valueStateChanged -= handler;
+            if (Connection != null) Connection.ValueStateChanged -= handler;
+        }
+
         private void SetConnection(MiniserverConnection connection, bool ownsConnection, string parameterName)
         {
             if (connection.IsDisposed) throw new ArgumentException(Strings.MiniserverContext_ConnectionDisposed, parameterName);
@@ -79,7 +102,10 @@ namespace Loxone.Client
             if (Connection != null)
             {
                 Connection.ValueStateChanged += Connection_ValueStateChanged;
+                Connection.ValueStateChanged += valueStateChanged;
                 Connection.TextStateChanged += Connection_TextStateChanged;
+                Connection.TextStateChanged += textStateChanged;
+                
             }
         }
 
@@ -88,7 +114,9 @@ namespace Loxone.Client
             if (Connection != null)
             {
                 Connection.ValueStateChanged -= Connection_ValueStateChanged;
+                Connection.ValueStateChanged -= valueStateChanged;
                 Connection.TextStateChanged -= Connection_TextStateChanged;
+                Connection.TextStateChanged -= textStateChanged;
             }
         }
 

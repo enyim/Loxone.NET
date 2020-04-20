@@ -29,12 +29,10 @@ namespace Loxone.Client.Samples.Console
             var login = "web";
 
             var logger = loggerFactory.CreateLogger<MiniserverContext>();
-
-            var connection = new MiniserverConnection(new LXUri("http", "testminiserver.loxone.com", 7779,7779),logger);
-            MiniserverContext miniserverContext = null;
-            connection.Credentials = new TokenCredential(login, password, TokenPermission.Web, default, "Loxone.NET Sample Console");
-            try
+            
+            using(var connection = new MiniserverConnection(new LXUri("http", "testminiserver.loxone.com", 7779, 7779), logger))
             {
+                connection.Credentials = new TokenCredential(login, password, TokenPermission.Web, default, "Loxone.NET Sample Console");
                 Console.WriteLine($"Opening connection to miniserver at {connection.Address}...");
                 await connection.OpenAsync(cts.Token);
                 Console.WriteLine($"Connected to Miniserver {connection.MiniserverInfo.SerialNumber}, FW version {connection.MiniserverInfo.FirmwareVersion}");
@@ -65,49 +63,46 @@ namespace Loxone.Client.Samples.Console
                     await structureFile.SaveAsync(structureFileName, cts.Token);
                 }
 
-                Console.WriteLine($"Structure file loaded.");
-                Console.WriteLine($"  Culture: {structureFile.Localization.Culture}");
-                Console.WriteLine($"  Last modified: {structureFile.LastModified}");
-                Console.WriteLine($"  Miniserver type: {structureFile.MiniserverInfo.MiniserverType}");
-
-                connection.ValueStateChanged += (sender, e) =>
-                {
-                    foreach (var change in e) Console.WriteLine(change);
-                };
-
-                connection.TextStateChanged += (sender, e) =>
-                {
-                    foreach (var change in e) Console.WriteLine("Text " + change);
-                };
-
                 // Create context
-                miniserverContext = new MiniserverContext(structureFile, logger)
-                {
-                    Connection = connection
-                };
+                using(var miniserverContext = new MiniserverContext(logger, structureFile)){
+                    // Set connection
+                    miniserverContext.Connection = connection;
+                    // Add listeners
+                    // Global - remains with context
+                    miniserverContext.AddEventValueStateChanged((sender, e) =>
+                    {
+                        foreach (var change in e) Console.WriteLine(change);
+                    });
 
-                Console.WriteLine("Enabling status updates...");
-                await connection.EnableStatusUpdatesAsync(cts.Token);                
+                    miniserverContext.AddEventTextStateChanged((sender, e) =>
+                    {
+                        foreach (var change in e) Console.WriteLine("Text " + change);
+                    });
+                    // Control - this will be dropped with connection
+                    miniserverContext.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First().OnStateChange += (c) => Console.WriteLine($"State changed in {c.Name}");
+                    miniserverContext.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First().OnCommandRespose += (response, status) => Console.WriteLine($"Response for device, response code {status}");
 
-                // Random example of command
-                await Task.Delay(1000);
-                var a = miniserverContext.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First();
-                a.Active = true;
+                    Console.WriteLine($"Structure file loaded.");
+                    Console.WriteLine($"  Culture: {miniserverContext.StructureFile.Localization.Culture}");
+                    Console.WriteLine($"  Last modified: {miniserverContext.StructureFile.LastModified}");
+                    Console.WriteLine($"  Miniserver type: {miniserverContext.StructureFile.MiniserverInfo.MiniserverType}");
 
-                await Task.Delay(10 * 1000);
-                var b = miniserverContext.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First();
-                b.Active = false;
+                    // Enable notification from miniserver
+                    Console.WriteLine("Enabling status updates...");
+                    await connection.EnableStatusUpdatesAsync(cts.Token);
 
-                // Await close
-                await connection.IsClosedAsync();
-            }
-            catch(Exception ex)
-            {
-                Console.WriteLine("Program inner: "+ ex);
-            }
-            finally
-            {
-                miniserverContext?.Dispose();
+                    // Random example of command
+                    await Task.Delay(1000);
+                    var a = miniserverContext.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First();
+                    a.Active = true;
+
+                    await Task.Delay(10 * 1000);
+                    var b = miniserverContext.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First();
+                    b.Active = false;
+
+                    // Await close
+                    await connection.IsClosedAsync();
+                }
             }
         }
 

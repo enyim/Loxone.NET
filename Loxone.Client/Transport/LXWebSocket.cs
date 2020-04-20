@@ -26,6 +26,7 @@ namespace Loxone.Client.Transport
         private LXHttpClient _httpClient; //another http client
         private readonly IEncryptorProvider _encryptorProvider;
         private readonly IConnection _connection;
+        private TimeSpan keepAlive;
 
         protected internal override LXClient HttpClient => _httpClient;
 
@@ -34,6 +35,12 @@ namespace Loxone.Client.Transport
             this._encryptorProvider = encryptorProvider;
             this._connection = connection;
             this._httpClient = new LXHttpClient(HttpUtils.MakeHttpUri(baseUri), ct);
+        }
+
+
+        public void SetKeepAlive(TimeSpan timeSpan)
+        {
+            keepAlive = timeSpan;
         }
 
         public async Task CloseAsync()
@@ -47,6 +54,7 @@ namespace Loxone.Client.Transport
         {
             Contract.Requires(_webSocket == null);
             _webSocket = new ClientWebSocket();
+            _webSocket.Options.KeepAliveInterval = keepAlive;
             _webSocket.Options.AddSubProtocol("remotecontrol"); // Probably should check scheme for http/https
             await _webSocket.ConnectAsync(new UriBuilder(BaseUri) { Path = "ws/rfc6455" }.Uri, cancellationToken).ConfigureAwait(false);
             StartReceiveLoop();
@@ -216,13 +224,6 @@ namespace Loxone.Client.Transport
             }
         }
 
-        private Task SendStringAsync(string s, CancellationToken cancellationToken)
-        {
-            var encoded = Encoding.GetBytes(s);
-            var segment = new ArraySegment<byte>(encoded);
-            return _webSocket.SendAsync(segment, WebSocketMessageType.Text, true, cancellationToken);
-        }
-
         internal async Task ReceiveAtomicAsync(ArraySegment<byte> segment, bool throwIfNotEom, CancellationToken cancellationToken)
         {
             int received = 0;
@@ -232,21 +233,13 @@ namespace Loxone.Client.Transport
             {
                 var slice = new ArraySegment<byte>(segment.Array, segment.Offset + received, segment.Count - received);
                 var result = await _webSocket.ReceiveAsync(slice, cancellationToken).ConfigureAwait(false);
-
                 received += result.Count;
 
-                if (result.CloseStatus != null)
-                {
-                    break;
-                }
-                 
+                if (result.CloseStatus != null) throw new WebSocketException((int)result.CloseStatus.Value, "Closed by other party");
                 eom = result.EndOfMessage;
             }
 
-            if (received < segment.Count)
-            {
-                throw new MiniserverTransportException();
-            }
+            if (received < segment.Count) throw new WebSocketException(WebSocketError.Faulted);
             else if (received == segment.Count && !eom && throwIfNotEom)
             {
                 // More data available but unexpected.
@@ -268,6 +261,22 @@ namespace Loxone.Client.Transport
             return header;
         }
 
+
+        #region Sending
+        //public async Task KeepAliveAsync(CancellationToken cancellation)
+        //{
+        //    var handler = new LXResponseCommandHandler<string>();
+        //    if (Interlocked.CompareExchange(ref _pendingCommand, handler, null) == null)
+        //    {
+        //        // No command pending
+        //        var header = new ArraySegment<byte>(new byte[8]);
+        //        header[0] = 0x03;
+        //        header[1] = (byte)MessageIdentifier.KeepAlive;
+        //        //header[2] = (byte)MessageInfoFlags.None;
+        //        await _webSocket.SendAsync(header, WebSocketMessageType.Binary, false, cancellation);
+        //    }
+        //}
+
         public async Task<string> RequestStringAsync(string command, CancellationToken cancellationToken)
         {
             var handler = new StringCommandHandler();
@@ -275,7 +284,6 @@ namespace Loxone.Client.Transport
             var s = await handler.Task.ConfigureAwait(false);
             return s;
         }
-
         protected override async Task<LXResponse<T>> RequestCommandInternalAsync<T>(string command, CommandEncryption encryption, CancellationToken cancellationToken)
         {
             var handler = new LXResponseCommandHandler<T>();
@@ -292,12 +300,15 @@ namespace Loxone.Client.Transport
                 throw new InvalidOperationException();
             }
 
-            if (handler.Encoder != null)
-            {
-                command = handler.Encoder.EncodeCommand(command);
-            }
-
+            if (handler.Encoder != null) command = handler.Encoder.EncodeCommand(command);
             await SendStringAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+
+        private Task SendStringAsync(string s, CancellationToken cancellationToken)
+        {
+            var encoded = Encoding.GetBytes(s);
+            var segment = new ArraySegment<byte>(encoded);
+            return _webSocket.SendAsync(segment, WebSocketMessageType.Text, true, cancellationToken);
         }
 
         private void ApplyEncryption<T>(LXResponseCommandHandler<T> handler, CommandEncryption encryption)
@@ -312,6 +323,7 @@ namespace Loxone.Client.Transport
                 }
             }
         }
+        #endregion
 
         protected override void Dispose(bool disposing)
         {

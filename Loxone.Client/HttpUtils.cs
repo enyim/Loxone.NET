@@ -41,17 +41,6 @@ namespace Loxone.Client
             return string.Equals(WebSocketScheme, uri.Scheme, StringComparison.OrdinalIgnoreCase);
         }
 
-        private static Uri ChangeScheme(Uri uri, string scheme)
-        {
-            Contract.Requires(uri != null);
-            if (!String.Equals(uri.Scheme, scheme, StringComparison.OrdinalIgnoreCase)) uri = new UriBuilder(uri) {
-                Scheme = scheme,
-                Port = uri.Port,
-                Host = uri.Host,
-            }.Uri;
-            return uri;
-        }
-
         public static Uri MakeWebSocketUri(LXUri uri) => new Uri($"ws://{uri.UriBase}:{uri.PortWs}/");
 
         public static Uri MakeHttpUri(LXUri uri) => new Uri($"{uri.Scheme}://{uri.UriBase}:{uri.PortHttp}/");
