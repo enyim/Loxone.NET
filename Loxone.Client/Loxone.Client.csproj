@@ -4,7 +4,7 @@
     <PackageId>Graspea.Loxone</PackageId>
     <AssemblyName>Graspea.Loxone</AssemblyName>
     <Description>Allows connecting to Loxone Miniserver from .NET application. Listen to changes and execute commands.</Description>
-    <Version>1.1.3</Version>
+    <Version>1.1.4</Version>
     <NeutralLanguage>en</NeutralLanguage>
     <Product>Graspea.Loxone</Product>
     <Authors>Graspea, Manison</Authors>
