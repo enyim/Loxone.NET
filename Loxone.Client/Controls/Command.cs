@@ -12,7 +12,6 @@ namespace Loxone.Client.Controls
 {
     using System;
     using System.Threading.Tasks;
-    using Microsoft.Extensions.Logging;
 
     public class Command
     {
@@ -31,12 +30,12 @@ namespace Loxone.Client.Controls
 
         public override string ToString() => $"{Uuid}/{Cmd}{String.Join("/", Args)}";
 
-        public async Task ExecuteAsync(MiniserverContext context, Action<string,int> action = null)
+        public async Task ExecuteAsync(MiniserverContext context, Func<string,int,object,Task> action = null)
         {
                 if (context != null)
                 {
                     var res = await context?.Connection.Command(default, this);
-                    action?.Invoke(res?.Value, res.Code);
+                    await action?.Invoke(res?.Value, res.Code, context?.ContextParent);
                 }
         }
     }

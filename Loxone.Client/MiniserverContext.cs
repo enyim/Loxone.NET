@@ -35,6 +35,7 @@ namespace Loxone.Client
 
         public bool Disposed { get; set; }
         public bool OwnsConnection { get; private set; }
+        public object ContextParent { get; set; }
         public ControlCollection Controls { get; } = new ControlCollection();
         public MiniserverConnection Connection
         {

@@ -64,9 +64,11 @@ namespace Loxone.Client.Samples.Console
                 }
 
                 // Create context
-                using(var miniserverContext = new MiniserverContext(logger, structureFile)){
+                using (var miniserverContext = new MiniserverContext(logger, structureFile))
+                {
                     // Set connection
                     miniserverContext.Connection = connection;
+                    miniserverContext.ContextParent = null; // set here your cotroller/internal api (used in Controls - onStateChange, OnCommandResponse)
                     // Add listeners
                     // Global - remains with context
                     miniserverContext.AddEventValueStateChanged((sender, e) =>
@@ -78,9 +80,11 @@ namespace Loxone.Client.Samples.Console
                     {
                         foreach (var change in e) Console.WriteLine("Text " + change);
                     });
-                    // Control - this will be dropped with connection
-                    miniserverContext.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First().OnStateChange += (c) => Console.WriteLine($"State changed in {c.Name}");
-                    miniserverContext.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First().OnCommandRespose += (response, status) => Console.WriteLine($"Response for device, response code {status}");
+                    // Control listeners - this will be dropped with connection, however this is preferred
+                    miniserverContext.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First().OnStateChange += (c, o) =>
+                        {Console.WriteLine($"State changed in {c.Name}"); return Task.CompletedTask; };
+                    miniserverContext.Controls.Where(p => p.GetType() == typeof(Switch) && !p.IsSecured).Cast<Switch>().First().OnCommandResponse += (response, status, o) =>
+                        {Console.WriteLine($"Response for device, response code {status}"); return Task.CompletedTask;} ;
 
                     Console.WriteLine($"Structure file loaded.");
                     Console.WriteLine($"  Culture: {miniserverContext.StructureFile.Localization.Culture}");

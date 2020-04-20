@@ -13,6 +13,7 @@ namespace Loxone.Client.Controls
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Threading.Tasks;
     using static Loxone.Client.Transport.TaskUtilities;
 
     public class Control
@@ -45,14 +46,14 @@ namespace Loxone.Client.Controls
         /// Purpose:
         /// i.e. subscribe to specific control
         /// </summary>
-        public event Action<Control> OnStateChange;
+        public event Func<Control, object,Task> OnStateChange;
 
         /// <summary>
         /// What to do with response from server
         /// string - message
         /// int - response code
         /// </summary>
-        public event Action<string, int> OnCommandRespose;
+        public event Func<string, int, object,Task> OnCommandResponse;
 
         public Uuid Uuid => InnerControl.Uuid;
 
@@ -65,12 +66,12 @@ namespace Loxone.Client.Controls
         public Category Category { get; internal set; }
 
 
-        internal protected void Execute(Command command) => command.ExecuteAsync(Context, OnCommandRespose).FireAndForgetSafeAsync(Context.Connection);
+        internal protected void Execute(Command command) => command.ExecuteAsync(Context, OnCommandResponse).FireAndForgetSafeAsync(Context.Connection);
 
 
         internal void OnValueStateUpdate(ValueState state){
             UpdateValueState(state);
-            OnStateChange?.Invoke(this);
+            OnStateChange?.Invoke(this,Context.ContextParent);
         }
 
         protected string GetStateNameByUuid(Uuid uuid) => InnerControl.States
