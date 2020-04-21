@@ -5,7 +5,7 @@ Loxone.NET is .NET library that allows you connecting to [Loxone Miniserver](htt
 See *Loxone.Client.Samples.Console* project for example how to connect to Loxone Miniserver.
 
 ## Stability
-Stable library will be released as 2.0. Until then, breaking chnages will appear between versions.
+Stable library will be released as 2.0. Until then, breaking changes will appear between versions.
 
 ## Nuget
 ```
