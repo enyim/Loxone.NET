@@ -11,10 +11,14 @@
 namespace Loxone.Client
 {
     using System;
+    using System.Collections.Generic;
     using System.Diagnostics.Contracts;
     using System.IO;
     using System.Threading;
     using System.Threading.Tasks;
+    using Loxone.Client.Controls;
+    using System.Linq;
+    using Loxone.Client.Models;
 
     public sealed class StructureFile
     {
@@ -43,6 +47,10 @@ namespace Loxone.Client
         private CategoryCollection _categories;
 
         public CategoryCollection Categories => _categories ??= new CategoryCollection(InnerFile.Categories);
+
+        private List<ControlReadOnly> controls;
+
+        public List<ControlReadOnly> Controls => controls ??= InnerFile.Controls.Values.Select(_ => new ControlReadOnly(_)).ToList();
 
         private StructureFile(Transport.StructureFile innerFile)
         {
